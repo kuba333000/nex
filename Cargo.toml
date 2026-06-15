@@ -3,8 +3,6 @@ name = "nex"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-
 [[bin]]
 name = "nex"
 path = "src/main.rs"

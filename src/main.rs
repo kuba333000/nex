@@ -4,7 +4,20 @@ use lexer::lexer::Lexer;
 use lexer::tokens::Token;
 
 fn main() {
-    let source_code = "a_ 6. 21. 738. 913. 3233.21939 512. . 3.6 . . ."; // example source code
+    // example source code for a Fibonacci function
+    let source_code = "let x = 10;
+
+func factorial : int -> int;
+
+def factorial(n) := {
+    if n <= 1: return 1;
+    return n * factorial(n-1);
+}
+
+display factorial(x);";
+
+    println!("{}", source_code);
+
     let mut lexer = Lexer::new(source_code);
 
     let mut tokens = Vec::new();

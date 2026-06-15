@@ -5,30 +5,14 @@ use std::str::Chars;
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
+    token_buffer: String,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
             chars: input.chars().peekable(),
-        }
-    }
-
-    pub fn next_token(&mut self) -> Token {
-        self.skip_whitespace();
-
-        let Some(ch) = self.chars.next() else {
-            return Token::EndOfFile;
-        };
-
-        match ch {
-            c if c.is_ascii_digit() || c == '.' => self.read_number(c),
-            c if c.is_alphabetic() || c == '_' => self.read_identifier(c),
-            '+' => Token::Plus,
-            '-' => Token::Minus,
-            '=' => Token::Assign,
-            ';' => Token::Semicolon,
-            _ => Token::Invalid(ch.to_string()),
+            token_buffer: String::from(""),
         }
     }
 
@@ -42,7 +26,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_identifier(&mut self, first: char) -> Token {
+    fn read_word(&mut self, first: char) -> Token {
         let mut identifier = String::from(first);
 
         while let Some(c) = self.chars.peek() {
@@ -54,7 +38,11 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Token::Identifier(identifier)
+        if matches!(identifier.as_str(), "if" | "else" | "func" | "def") {
+            Token::Keyword(identifier)
+        } else {
+            Token::Identifier(identifier)
+        }
     }
 
     fn consume_digits(&mut self, buf: &mut String) -> bool {
@@ -95,6 +83,63 @@ impl<'a> Lexer<'a> {
             return Token::Number(number);
         } else {
             return Token::Dot;
+        }
+    }
+
+    fn lookup_token_table(&mut self) -> Option<Token> {
+        match self.token_buffer.as_str() {
+            "->" => Some(Token::Arrow),
+            "-" => Some(Token::Minus),
+            _ => None,
+        }
+    }
+
+    fn longest_match(&mut self, first: char) -> Token { // TODO: fix this function
+        self.token_buffer = String::from(first);
+        
+        loop {
+            let Some(ch) = self.chars.peek() else {
+                break self.lookup_token_table().unwrap();
+            };
+
+            self.token_buffer.push(*ch);
+            let Some(_contender) = self.lookup_token_table() else {
+                self.token_buffer.pop();
+                break self.lookup_token_table().unwrap();
+            };
+        }        
+    }
+
+    pub fn next_token(&mut self) -> Token {
+        self.skip_whitespace();
+
+        let Some(ch) = self.chars.next() else {
+            return Token::EndOfFile;
+        };
+
+        match ch {
+            c if c.is_ascii_digit() || c == '.' => self.read_number(c),
+            c if c.is_alphabetic() || c == '_' => self.read_word(c),
+
+            c if matches!(c, '-') => self.longest_match(c),
+
+            '=' => Token::Assign,
+
+            '+' => Token::Plus,
+
+            ';' => Token::Semicolon,
+            ':' => Token::Colon,
+
+            '(' => Token::LeftParen,
+            ')' => Token::RightParen,
+
+            '[' => Token::LeftBracket,
+            ']' => Token::RightBracket,
+
+            '{' => Token::LeftBrace,
+            '}' => Token::RightBrace,
+
+            _ => Token::Invalid(ch.to_string()),
         }
     }
 }
