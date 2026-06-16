@@ -1,7 +1,6 @@
 mod lexer;
 
 use lexer::lexer::Lexer;
-use lexer::tokens::Token;
 
 fn main() {
     // example source code for a Fibonacci function
@@ -20,23 +19,5 @@ display factorial(x);";
 
     let mut lexer = Lexer::new(source_code);
 
-    let mut tokens = Vec::new();
-    loop {
-        let token = lexer.next_token();
-
-        match token {
-            Token::EndOfFile => {
-                tokens.push(token);
-                break;
-            }
-            Token::Invalid(c) => {
-                panic!("unexpected character: {}", c);
-            }
-            _ => {}
-        }
-
-        tokens.push(token);
-    }
-
-    println!("{:?}", tokens);
+    println!("{:?}", lexer.get_tokens());
 }

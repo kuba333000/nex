@@ -1,4 +1,6 @@
+use crate::lexer::tokens::OPERATORS;
 use crate::lexer::tokens::Token;
+use crate::lexer::tokens::MatchKind;
 
 use std::iter::Peekable;
 use std::str::Chars;
@@ -86,28 +88,54 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lookup_token_table(&mut self) -> Option<Token> {
-        match self.token_buffer.as_str() {
-            "->" => Some(Token::Arrow),
-            "-" => Some(Token::Minus),
-            _ => None,
+    fn lookup_state(&self) -> MatchKind {
+        let s = self.token_buffer.as_str();
+
+        let token = OPERATORS
+            .iter()
+            .find(|(op, _)| *op == s)
+            .map(|(_, tok)| tok.clone());
+
+        let is_prefix = OPERATORS
+            .iter()
+            .any(|(op, _)| op.starts_with(s) && op.len() > s.len());
+
+        match (token, is_prefix) {
+            (Some(tok), true) => MatchKind::TokenAndPrefix(tok),
+            (Some(tok), false) => MatchKind::Token(tok),
+            (None, true) => MatchKind::Prefix,
+            (None, false) => MatchKind::None,
         }
     }
 
-    fn longest_match(&mut self, first: char) -> Token { // TODO: fix this function
-        self.token_buffer = String::from(first);
-        
+    fn longest_match(&mut self, first: char) -> Token {
+        self.token_buffer.clear();
+        self.token_buffer.push(first);
+
+        let mut last_match = None;
+
         loop {
+            match self.lookup_state() {
+                MatchKind::None => break,
+                MatchKind::Prefix => {}
+                MatchKind::Token(tok) => {
+                    last_match = Some(tok);
+                    break;
+                }
+                MatchKind::TokenAndPrefix(tok) => {
+                    last_match = Some(tok);
+                }
+            }
+
             let Some(ch) = self.chars.peek() else {
-                break self.lookup_token_table().unwrap();
+                break;
             };
 
             self.token_buffer.push(*ch);
-            let Some(_contender) = self.lookup_token_table() else {
-                self.token_buffer.pop();
-                break self.lookup_token_table().unwrap();
-            };
-        }        
+            self.chars.next();
+        }
+
+        last_match.unwrap()
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -121,14 +149,18 @@ impl<'a> Lexer<'a> {
             c if c.is_ascii_digit() || c == '.' => self.read_number(c),
             c if c.is_alphabetic() || c == '_' => self.read_word(c),
 
-            c if matches!(c, '-') => self.longest_match(c),
+            c if matches!(c, '-' | '>' | '<' | ':') => self.longest_match(c),
 
-            '=' => Token::Assign,
+            '=' => Token::Equal,
+
+            '>' => Token::Greater,
+            '<' => Token::Less,
 
             '+' => Token::Plus,
+            '*' => Token::Mult,
+            '/' => Token::Div,
 
             ';' => Token::Semicolon,
-            ':' => Token::Colon,
 
             '(' => Token::LeftParen,
             ')' => Token::RightParen,
@@ -141,5 +173,27 @@ impl<'a> Lexer<'a> {
 
             _ => Token::Invalid(ch.to_string()),
         }
+    }
+
+    pub fn get_tokens(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_token();
+
+            match token {
+                Token::EndOfFile => {
+                    tokens.push(token);
+                    break;
+                }
+                Token::Invalid(c) => {
+                    panic!("unexpected character: {}", c);
+                }
+                _ => {}
+            }
+
+            tokens.push(token);
+        }
+
+        tokens
     }
 }

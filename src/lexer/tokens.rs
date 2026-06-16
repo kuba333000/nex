@@ -1,16 +1,38 @@
+pub const OPERATORS: &[(&str, Token)] = &[
+    ("->", Token::Arrow),
+    ("-", Token::Minus),
+    ("!=", Token::NotEq),
+    (">=", Token::GreaterEq),
+    (">", Token::Greater),
+    ("<=", Token::LessEq),
+    ("<", Token::Less),
+    (":=", Token::Defined),
+    (":", Token::Colon),
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Keyword(String),
     Identifier(String),
 
     Number(String),
-    
-    Assign,
+
+    Defined,
+    Equal,
+    NotEq,
+
+    Greater,
+    GreaterEq,
+
+    Less,
+    LessEq,
 
     Dot,
 
     Plus,
     Minus,
+    Mult,
+    Div,
 
     Semicolon,
 
@@ -28,4 +50,11 @@ pub enum Token {
 
     EndOfFile,
     Invalid(String)
+}
+
+pub enum MatchKind {
+    None,
+    Prefix,
+    Token(Token),
+    TokenAndPrefix(Token),
 }
