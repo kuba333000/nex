@@ -13,11 +13,23 @@ def factorial(n) := {
     return n * factorial(n-1);
 }
 
-display factorial(x);";
+display \"10! = \" & factorial(x);
 
-    println!("{}", source_code);
+display \"This
+is a
+multi-line
+string\"";
+
+    // let source_code = "->";
 
     let mut lexer = Lexer::new(source_code);
 
-    println!("{:?}", lexer.get_tokens());
+    let s = lexer
+        .get_tokens()
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    println!("{s}");
 }

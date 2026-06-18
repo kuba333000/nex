@@ -1,21 +1,13 @@
-pub const OPERATORS: &[(&str, Token)] = &[
-    ("->", Token::Arrow),
-    ("-", Token::Minus),
-    ("!=", Token::NotEq),
-    (">=", Token::GreaterEq),
-    (">", Token::Greater),
-    ("<=", Token::LessEq),
-    ("<", Token::Less),
-    (":=", Token::Defined),
-    (":", Token::Colon),
-];
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Token {
-    Keyword(String),
-    Identifier(String),
+pub enum TokenKind {
+    Keyword,
+    Type,
+    Identifier,
 
-    Number(String),
+    String,
+    Number,
 
     Defined,
     Equal,
@@ -28,6 +20,8 @@ pub enum Token {
     LessEq,
 
     Dot,
+
+    Concat,
 
     Plus,
     Minus,
@@ -49,12 +43,26 @@ pub enum Token {
     RightBrace,
 
     EndOfFile,
-    Invalid(String)
+    Invalid,
 }
 
-pub enum MatchKind {
-    None,
-    Prefix,
-    Token(Token),
-    TokenAndPrefix(Token),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    pub token_kind: TokenKind,
+    pub lexeme: Option<String>,
+    pub start: usize,
+    pub length: usize,
+}
+
+impl Token {
+    pub fn new(token_kind: TokenKind, lexeme: Option<String>, start: usize, length: usize) -> Self { Self { token_kind, lexeme, start, length } }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.lexeme {
+            Some(lexeme) => write!(f, "{:?}(\"{}\")", self.token_kind, lexeme),
+            None => write!(f, "{:?}", self.token_kind),
+        }
+    }
 }

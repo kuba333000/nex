@@ -4,6 +4,7 @@ build/
 *.obj
 *.pdb
 *.info
+message.txt
 
 # Added by cargo
 

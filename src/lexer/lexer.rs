@@ -1,61 +1,86 @@
-use crate::lexer::tokens::OPERATORS;
+use crate::lexer::tokens::TokenKind;
 use crate::lexer::tokens::Token;
-use crate::lexer::tokens::MatchKind;
 
-use std::iter::Peekable;
-use std::str::Chars;
-
-pub struct Lexer<'a> {
-    chars: Peekable<Chars<'a>>,
-    token_buffer: String,
+pub struct Lexer {
+    chars: Vec<char>,
+    pos: usize,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl Lexer {
+    pub fn new(input: &str) -> Self {
         Self {
-            chars: input.chars().peekable(),
-            token_buffer: String::from(""),
+            chars: input.chars().collect(),
+            pos: 0,
         }
+    }
+
+    fn peek(&self) -> Option<char> { self.chars.get(self.pos).copied() }
+
+    fn peek_slice(&self, length: usize) -> Option<&[char]> { self.chars.get(self.pos..self.pos + length) }
+
+    fn peek_eq(&self, s: &str) -> bool {
+        self.peek_slice(s.chars().count())
+            .is_some_and(|c| c.iter().copied().eq(s.chars()))
+    }
+
+    // fn lookahead(&mut self, offset: usize) -> Option<char> { self.chars.get(self.pos + offset).copied() }
+
+    fn next(&mut self) -> Option<char> {
+        let ch = self.peek();
+        self.pos += 1;
+        ch
+    }
+
+    fn advance_n(&mut self, length: usize) -> Option<&[char]> {
+        let slice = self.chars.get(self.pos..self.pos + length);
+        self.pos += length;
+        slice
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.chars.peek() {
+        while let Some(c) = self.peek() {
             if c.is_whitespace() {
-                self.chars.next();
+                self.next();
             } else {
                 break;
             }
         }
     }
 
-    fn read_word(&mut self, first: char) -> Token {
+    fn read_word(&mut self) -> Token {
+        let first = self.next().unwrap();
         let mut identifier = String::from(first);
+        let start_pos = self.pos;
 
-        while let Some(c) = self.chars.peek() {
-            if c.is_alphanumeric() || *c == '_' {
-                identifier.push(*c);
-                self.chars.next();
+        while let Some(c) = self.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                identifier.push(c);
+                self.next();
             } else {
                 break;
             }
         }
 
-        if matches!(identifier.as_str(), "if" | "else" | "func" | "def") {
-            Token::Keyword(identifier)
-        } else {
-            Token::Identifier(identifier)
+        Token {
+            token_kind: if matches!(identifier.as_str(), "display" | "let" | "func" | "def" | "return" | "if" | "else") { TokenKind::Keyword }
+                   else if matches!(identifier.as_str(), "int" | "str") { TokenKind::Type }
+            else { TokenKind::Identifier },
+
+            lexeme: Some(identifier.clone()),
+            start: start_pos,
+            length: identifier.len(),
         }
     }
 
     fn consume_digits(&mut self, buf: &mut String) -> bool {
         let mut has_digit = false;
 
-        while let Some(c) = self.chars.peek() {
+        while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 has_digit = true;
 
-                buf.push(*c);
-                self.chars.next();
+                buf.push(c);
+                self.next();
             } else {
                 break;
             }
@@ -64,8 +89,10 @@ impl<'a> Lexer<'a> {
         has_digit
     }
 
-    fn read_number(&mut self, first: char) -> Token {
+    fn read_number(&mut self) -> Token {
+        let first = self.next().unwrap();
         let mut number = String::from(first);
+        let start_pos = self.pos;
 
         let mut has_start_digits = self.consume_digits(&mut number);
         let mut has_end_digits = false;
@@ -74,104 +101,127 @@ impl<'a> Lexer<'a> {
             has_start_digits = true;
         }
         
-        if self.chars.peek() == Some(&'.') {
+        if self.peek() == Some('.') {
             number.push('.');
-            self.chars.next();
+            self.next();
 
             has_end_digits = self.consume_digits(&mut number);
         }
 
-        if has_start_digits || has_end_digits {
-            return Token::Number(number);
-        } else {
-            return Token::Dot;
+        Token {
+            token_kind: if has_start_digits || has_end_digits { TokenKind::Number }
+            else { TokenKind::Dot },
+
+            lexeme: Some(number.clone()),
+            start: start_pos,
+            length: number.len(),
         }
     }
 
-    fn lookup_state(&self) -> MatchKind {
-        let s = self.token_buffer.as_str();
+    fn read_string(&mut self) -> Token {
+        let first = self.next().unwrap();
+        let mut string = String::from(first);
+        let start_pos = self.pos;
 
-        let token = OPERATORS
-            .iter()
-            .find(|(op, _)| *op == s)
-            .map(|(_, tok)| tok.clone());
-
-        let is_prefix = OPERATORS
-            .iter()
-            .any(|(op, _)| op.starts_with(s) && op.len() > s.len());
-
-        match (token, is_prefix) {
-            (Some(tok), true) => MatchKind::TokenAndPrefix(tok),
-            (Some(tok), false) => MatchKind::Token(tok),
-            (None, true) => MatchKind::Prefix,
-            (None, false) => MatchKind::None,
-        }
-    }
-
-    fn longest_match(&mut self, first: char) -> Token {
-        self.token_buffer.clear();
-        self.token_buffer.push(first);
-
-        let mut last_match = None;
-
-        loop {
-            match self.lookup_state() {
-                MatchKind::None => break,
-                MatchKind::Prefix => {}
-                MatchKind::Token(tok) => {
-                    last_match = Some(tok);
-                    break;
-                }
-                MatchKind::TokenAndPrefix(tok) => {
-                    last_match = Some(tok);
-                }
+        while let Some(c) = self.peek() {
+            if c == '"' {
+                self.next();
+                break;
             }
 
-            let Some(ch) = self.chars.peek() else {
-                break;
-            };
-
-            self.token_buffer.push(*ch);
-            self.chars.next();
+            string.push(c);
+            self.next();
         }
 
-        last_match.unwrap()
+        Token {
+            token_kind: TokenKind::String,
+            lexeme: Some(string.clone()),
+            start: start_pos,
+            length: string.len(),
+        }
     }
 
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
+        let start_pos = self.pos;
 
-        let Some(ch) = self.chars.next() else {
-            return Token::EndOfFile;
+        let Some(ch) = self.peek() else {
+            return Token {
+                token_kind: TokenKind::EndOfFile,
+                lexeme: None,
+                start: start_pos,
+                length: 0
+            };
         };
 
-        match ch {
-            c if c.is_ascii_digit() || c == '.' => self.read_number(c),
-            c if c.is_alphabetic() || c == '_' => self.read_word(c),
+        // lexeme mapping
+        let token = match ch {
+            c if c.is_alphabetic() || c == '_' => Some(self.read_word()),
+            c if c.is_ascii_digit() || c == '.' => Some(self.read_number()),
+            c if c == '"' => Some(self.read_string()),
 
-            c if matches!(c, '-' | '>' | '<' | ':') => self.longest_match(c),
+            _ => None
+        };
 
-            '=' => Token::Equal,
+        if token.is_some() {
+            return token.unwrap();
+        }
 
-            '>' => Token::Greater,
-            '<' => Token::Less,
+        // multi-character mapping
+        let token = match () {
+            _ if self.peek_eq(":=") => Some(Token::new(TokenKind::Defined, None, start_pos, 2)),
+            
+            _ if self.peek_eq("->") => Some(Token::new(TokenKind::Arrow, None, start_pos, 2)),
+            
+            _ if self.peek_eq("!=") => Some(Token::new(TokenKind::NotEq, None, start_pos, 2)),
+            _ if self.peek_eq(">=") => Some(Token::new(TokenKind::GreaterEq, None, start_pos, 2)),
+            _ if self.peek_eq("<=") => Some(Token::new(TokenKind::LessEq, None, start_pos, 2)),
 
-            '+' => Token::Plus,
-            '*' => Token::Mult,
-            '/' => Token::Div,
+            _ => None
+        };
 
-            ';' => Token::Semicolon,
+        if token.is_some() {
+            let token_unwrapped = token.unwrap();
+            self.advance_n(token_unwrapped.length);
+            return token_unwrapped;
+        }
 
-            '(' => Token::LeftParen,
-            ')' => Token::RightParen,
+        // single character mapping
+        let kind = match ch {
+            ':' => TokenKind::Colon,
+            ';' => TokenKind::Semicolon,
 
-            '[' => Token::LeftBracket,
-            ']' => Token::RightBracket,
+            '(' => TokenKind::LeftParen,
+            ')' => TokenKind::RightParen,
 
-            '{' => Token::LeftBrace,
-            '}' => Token::RightBrace,
+            '[' => TokenKind::LeftBracket,
+            ']' => TokenKind::RightBracket,
 
-            _ => Token::Invalid(ch.to_string()),
+            '{' => TokenKind::LeftBrace,
+            '}' => TokenKind::RightBrace,
+
+            '=' => TokenKind::Equal,
+
+            '>' => TokenKind::Greater,
+            '<' => TokenKind::Less,
+
+            '&' => TokenKind::Concat,
+
+            '+' => TokenKind::Plus,
+            '-' => TokenKind::Minus,
+            '*' => TokenKind::Mult,
+            '/' => TokenKind::Div,
+
+            _ => TokenKind::Invalid,
+        };
+
+        self.next();
+
+        Token {
+            token_kind: kind.clone(),
+            lexeme: if kind == TokenKind::Invalid { Some(ch.to_string()) } else { None },
+            start: start_pos,
+            length: 1,
         }
     }
 
@@ -181,11 +231,11 @@ impl<'a> Lexer<'a> {
             let token = self.next_token();
 
             match token {
-                Token::EndOfFile => {
+                Token { token_kind: TokenKind::EndOfFile, .. } => {
                     tokens.push(token);
                     break;
                 }
-                Token::Invalid(c) => {
+                Token { token_kind: TokenKind::Invalid, lexeme: Some(c), .. } => {
                     panic!("unexpected character: {}", c);
                 }
                 _ => {}
