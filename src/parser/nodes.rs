@@ -1,6 +1,11 @@
 use crate::span::Span;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
+pub enum UnaryOp {
+    Neg,
+}
+
+#[derive(Debug)]
 pub enum BinaryOp {
     Equal,
     NotEq,
@@ -17,24 +22,37 @@ pub enum BinaryOp {
     Div,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExprKind {
-    Integer(i64),
-    Float(i64),
+#[derive(Debug)]
+pub enum Expr {
+    StrType,
+    IntType,
 
     String(String),
 
+    Integer(i64),
+    Real(f64),
+
     Identifier(String),
+
+    Unary {
+        op: UnaryOp,
+        expr: Box<AstNode>,
+    },
 
     Binary {
         op: BinaryOp,
-        left: Box<Expr>,
-        right: Box<Expr>,
-    }
+        left: Box<AstNode>,
+        right: Box<AstNode>,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Expr {
-    pub kind: ExprKind,
+#[derive(Debug)]
+pub enum AstNodeKind {
+    Expr { kind: Expr },
+}
+
+#[derive(Debug)]
+pub struct AstNode {
+    pub category: AstNodeKind,
     pub span: Span,
 }

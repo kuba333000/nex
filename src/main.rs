@@ -11,7 +11,7 @@ fn main() {
     // example source code for a Fibonacci function
     let source_code = "let x = 10;
 
-func factorial : int -> int;
+func factorial : Int -> Int;
 
 def factorial(n) := {
     return 1 if n <= 1 else n * factorial(n-1);

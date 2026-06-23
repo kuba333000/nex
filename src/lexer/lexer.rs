@@ -1,7 +1,6 @@
 use crate::span::Span;
 
-use crate::lexer::tokens::TokenKind;
-use crate::lexer::tokens::Token;
+use crate::lexer::tokens::{TokenKind, Token};
 
 pub struct Lexer {
     chars: Vec<char>,
@@ -67,8 +66,9 @@ impl Lexer {
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
             
-            "int" => TokenKind::IntType,
-            "str" => TokenKind::StrType,
+            "Str" => TokenKind::StrType,
+            "Int" => TokenKind::IntType,
+            "Real" => TokenKind::RealType,
 
             _ => TokenKind::Identifier,
         };
@@ -212,9 +212,9 @@ impl Lexer {
 
             '&' => TokenKind::Concat,
 
-            '+' => TokenKind::Plus,
-            '-' => TokenKind::Minus,
-            '*' => TokenKind::Mult,
+            '+' => TokenKind::Add,
+            '-' => TokenKind::Sub,
+            '*' => TokenKind::Mul,
             '/' => TokenKind::Div,
 
             _ => TokenKind::Invalid,

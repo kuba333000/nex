@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::span::Span;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Display,
     Let,
@@ -12,13 +12,14 @@ pub enum TokenKind {
     If,
     Else,
 
-    IntType,
+    Identifier,
+
     StrType,
+    IntType,
+    RealType,
 
     String,
     Number,
-
-    Identifier,
 
     Assign,
     Defined,
@@ -34,9 +35,9 @@ pub enum TokenKind {
 
     Concat,
 
-    Plus,
-    Minus,
-    Mult,
+    Add,
+    Sub,
+    Mul,
     Div,
 
     Semicolon,
@@ -57,7 +58,7 @@ pub enum TokenKind {
     Invalid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_kind: TokenKind,
     pub lexeme: Option<String>,
