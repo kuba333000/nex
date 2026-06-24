@@ -1,12 +1,15 @@
 use crate::span::Span;
 
 use crate::lexer::tokens::{Token, TokenKind};
-use crate::parser::nodes::{AstNode, AstNodeKind, Expr, UnaryOp};
+use crate::parser::nodes::{AstNode, AstNodeKind, Expr, UnaryOp, BinaryOp};
 
-type Bp = u8;
+type BpSize = u8;
 
 #[derive(Debug)]
-pub struct SyntaxError;
+pub enum ParseError {
+    SyntaxError,
+    EOFError,
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -26,62 +29,90 @@ impl Parser {
         token
     }
 
-    fn consume(&mut self, token_kind: TokenKind) -> Result<Token, SyntaxError> {
+    fn consume(&mut self, token_kind: TokenKind) -> Result<Token, ParseError> {
         let consumed = self.peek();
         if consumed.token_kind == token_kind {
             self.pos += 1;
             Ok(consumed)
         } else {
-            Err(SyntaxError)
+            Err(ParseError::SyntaxError)
         }
     }
     
-    fn get_unary_info(&self, kind: TokenKind) -> Option<(UnaryOp, Bp)> {
+    fn get_prefix_op(&self, kind: TokenKind) -> Option<(UnaryOp, BpSize)> {
         match kind {
             TokenKind::Sub => Some((UnaryOp::Neg, 30)),
             _ => None,
         }
     }
 
-    fn get_infix_bp(&self, op: TokenKind) -> Option<(Bp, Bp)> {
+    fn get_infix_op(&self, op: TokenKind) -> Option<(BinaryOp, BpSize, BpSize)> {
         match op {
-            TokenKind::Assign => Some((10, 9)),
-            TokenKind::Equal
-            | TokenKind::NotEq   => Some((11, 12)),
-            TokenKind::Add
-            | TokenKind::Sub => Some((19, 20)),
-            TokenKind::Mul
-            | TokenKind::Div => Some((21, 22)),
+            TokenKind::Equal => Some((BinaryOp::Equal, 9, 10)),
+            TokenKind::NotEq => Some((BinaryOp::NotEq, 9, 10)),
+            TokenKind::Add => Some((BinaryOp::Add, 19, 20)),
+            TokenKind::Sub => Some((BinaryOp::Sub, 19, 20)),
+            TokenKind::Mul => Some((BinaryOp::Mult, 21, 22)),
+            TokenKind::Div => Some((BinaryOp::Div, 21, 22)),
             _ => None,
         }
     }
 
-    pub fn parse(&mut self) -> AstNode {
+    pub fn parse(&mut self) -> Result<Vec<AstNode>, ParseError> {
         self.pos = 0;
 
         let mut nodes = Vec::new();
-        while let Some(node) = self.parse_statement() {
-            nodes.push(node);
+        loop {
+            match self.parse_statement() {
+                Ok(node) => nodes.push(node),
+                Err(ParseError::EOFError) => break Ok(nodes),
+                Err(ParseError::SyntaxError) => break Err(ParseError::SyntaxError),
+            }
+        }
+    }
+
+    fn parse_statement(&mut self) -> Result<AstNode, ParseError> { // TODO
+        if self.peek().token_kind == TokenKind::EndOfFile { return Err(ParseError::EOFError); };
+
+        self.parse_expression(0)?.ok_or(ParseError::SyntaxError)
+    }
+
+    fn parse_expression(&mut self, min_bp: BpSize) -> Result<Option<AstNode>, ParseError> {
+        let mut lhs = self.parse_prefix()?.ok_or(ParseError::SyntaxError)?;
+        
+        loop {
+            let Some((op, lbp, rbp)) = self.get_infix_op(self.peek().token_kind) else {
+                break;
+            };
+
+            if lbp < min_bp {
+                break;
+            }
+            
+            self.next();
+
+            let rhs = self.parse_expression(rbp)?.ok_or(ParseError::SyntaxError)?;
+
+            lhs = AstNode {
+                category: AstNodeKind::Expr {
+                    kind: Expr::Binary {
+                        op,
+                        left: Box::new(lhs.clone()),
+                        right: Box::new(rhs.clone()),
+                    }
+                },
+                span: Span::new_by_spans(lhs.span, rhs.span),
+            };
         }
 
-        nodes
+        Ok(Some(lhs))
     }
 
-    fn parse_statement(&mut self) -> Result<Option<AstNode>, SyntaxError> {
-        let node = self.parse_expression()?;
-        // TODO
-    }
-
-    fn parse_expression(&mut self, min_bp: u8) -> Result<Option<AstNode>, SyntaxError> {
-        let node = self.parse_prefix()?;
-        // TODO
-    }
-
-    fn parse_prefix(&mut self) -> Result<Option<AstNode>, SyntaxError> {
+    fn parse_prefix(&mut self) -> Result<Option<AstNode>, ParseError> {
         let token = self.peek();
         let kind = token.token_kind;
 
-        if let Some((op, bp)) = self.get_unary_info(kind.clone()) {
+        if let Some((op, bp)) = self.get_prefix_op(kind.clone()) {
             let op_span = token.span;
             self.consume(kind)?;
 
@@ -102,7 +133,7 @@ impl Parser {
         self.parse_literal()
     }
 
-    fn parse_literal(&mut self) -> Result<Option<AstNode>, SyntaxError> {
+    fn parse_literal(&mut self) -> Result<Option<AstNode>, ParseError> {
         let token = self.peek();
 
         let literal_kind = match token.token_kind {
