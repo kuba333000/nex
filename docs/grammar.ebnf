@@ -1,0 +1,35 @@
+:: sep_by(rule, sep) = (rule (sep rule)*)? ;
+:: sep_by_one_or_more(rule, sep) = rule (sep rule)* ;
+:: sep_by_two_or_more(rule, sep) = rule sep rule (sep rule)* ;
+
+letter = "a".."z" | "A".."Z" ;
+digit = "0".."9" ;
+
+IDENTIFIER = ( letter | "_" ) ( letter | digit | "_" )* ;
+
+!program = declaration* ;
+
+!declaration = global_variable_decl
+             | function_signature
+             | procedure_signature
+             | callable_definition
+             ;
+
+global_variable_decl = "let" IDENTIFIER "=" expression ;
+
+function_signature = "func" IDENTIFIER ":" type "->" type ;
+procedure_signature = "proc" IDENTIFIER ":" type "->" type ;
+
+callable_definition = "def" IDENTIFIER "(" sep_by[IDENTIFIER, ","] ")" ":=" block ;
+
+type = IDENTIFIER | "()" | "(" sep_by_two_or_more[type, ","] ")" ;
+
+!block = "{" statement* "}" ;
+
+!statement = local_variable_decl
+           | if
+           | procedure_call
+
+local_variable_decl = "let" IDENTIFIER "=" expression ;
+
+if = "if" expression block_statement ("else" (if | block_statement))? ;

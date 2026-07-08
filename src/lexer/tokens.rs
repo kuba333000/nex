@@ -7,16 +7,13 @@ pub enum TokenKind {
     Display,
     Let,
     Func,
+    Proc,
     Def,
     Return,
     If,
     Else,
 
     Identifier,
-
-    StrType,
-    IntType,
-    RealType,
 
     String,
     Number,
@@ -44,6 +41,7 @@ pub enum TokenKind {
 
     Colon,
     Arrow,
+    Comma,
 
     LeftParen,
     RightParen,

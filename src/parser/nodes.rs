@@ -3,6 +3,17 @@ use std::fmt;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
+pub struct Block {
+    pub statements: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Parameter {
+    pub name: String,
+    pub default: Option<Box<Expr>>,
+}
+
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Neg,
 }
@@ -25,10 +36,7 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expr {
-    StrType,
-    IntType,
-
+pub enum ExprKind {
     String(String),
 
     Integer(i64),
@@ -38,25 +46,99 @@ pub enum Expr {
 
     Unary {
         op: UnaryOp,
-        expr: Box<AstNode>,
+        expr: Box<Expr>,
     },
 
     Binary {
         op: BinaryOp,
-        left: Box<AstNode>,
-        right: Box<AstNode>,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+
+    Block(Block),
+}
+
+#[derive(Debug, Clone)]
+pub enum StmtKind {
+    LocalVariable {
+        name: String,
+        value: Box<Expr>,
+    },
+
+    If {
+        cond: Box<Expr>,
+        if_body: Block,
+        else_body: Option<Box<Stmt>>,
+    },
+
+    Block(Block),
+}
+
+#[derive(Debug, Clone)]
+pub enum DeclKind {
+    GlobalVariable {
+        name: String,
+        value: Box<Expr>,
+    },
+
+    FunctionSignature {
+        name: String,
+        domain: Box<Type>,
+        codomain: Box<Type>,
+    },
+
+    ProcedureSignature {
+        name: String,
+        domain: Box<Type>,
+    },
+
+    Callable {
+        name: String,
+        paramaters: Vec<Parameter>,
+        body: Block,
     },
 }
 
 #[derive(Debug, Clone)]
-pub enum AstNodeKind {
-    Expr { kind: Expr },
+pub enum TypeKind {
+    Named(String),
+    Tuple(Vec<Type>),
 }
 
 #[derive(Debug, Clone)]
-pub struct AstNode {
-    pub category: AstNodeKind,
+pub struct Expr {
+    pub kind: ExprKind,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Decl {
+    pub kind: DeclKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Type {
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.statements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+        
+        write!(f, "{}", s)
+    }
 }
 
 impl fmt::Display for UnaryOp {
@@ -91,31 +173,81 @@ impl fmt::Display for BinaryOp {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::StrType => write!(f, "string"),
-            Expr::IntType => write!(f, "int"),
+        match &self.kind {
+            ExprKind::String(s) => write!(f, "\"{s}\""),
+            ExprKind::Integer(i) => write!(f, "{i}"),
+            ExprKind::Real(r) => write!(f, "{r}"),
 
-            Expr::String(s) => write!(f, "\"{s}\""),
-            Expr::Integer(i) => write!(f, "{i}"),
-            Expr::Real(r) => write!(f, "{r}"),
+            ExprKind::Identifier(name) => write!(f, "{name}"),
 
-            Expr::Identifier(name) => write!(f, "{name}"),
-
-            Expr::Unary { op, expr } => {
+            ExprKind::Unary { op, expr } => {
                 write!(f, "({}{})", op, expr)
-            }
+            },
 
-            Expr::Binary { op, left, right } => {
+            ExprKind::Binary { op, left, right } => {
                 write!(f, "({} {} {})", left, op, right)
+            },
+
+            ExprKind::Block(block) => {
+                write!(f, "{}", block)
             }
         }
     }
 }
 
-impl fmt::Display for AstNode {
+impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.category {
-            AstNodeKind::Expr { kind } => write!(f, "{kind}"),
+        match &self.kind {
+            StmtKind::LocalVariable { name, value } => {
+                write!(f, "LocalVariable({}, {})", name, value)
+            },
+
+            StmtKind::If { cond, if_body, else_body } => {
+                match else_body {
+                    Some(body) => write!(f, "If({}, {}, {})", cond, if_body, *body),
+                    None => write!(f, "If({}, {})", cond, if_body),
+                }
+            },
+
+            StmtKind::Block(block) => {
+                write!(f, "{}", block)
+            }
+        }
+    }
+}
+
+impl fmt::Display for Decl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            DeclKind::GlobalVariable { name, value } => {
+                write!(f, "GlobalVariable({}, {})", name, value)
+            },
+
+            DeclKind::FunctionSignature { name, domain, codomain } => {
+                write!(f, "FunctionSignature({}, {}, {})", name, domain, codomain)
+            },
+
+            DeclKind::ProcedureSignature { name, domain } => {
+                write!(f, "FunctionSignature({}, {})", name, domain)
+            },
+
+            DeclKind::Callable { name, paramaters, body } => {
+                write!(f, "CallableDefinition({}, {:?}, {})", name, paramaters, body)
+            },
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            TypeKind::Named(name) => {
+                write!(f, "Type({name})", )
+            },
+
+            TypeKind::Tuple(names) => {
+                write!(f, "TypeTuple({:?})", names)
+            },
         }
     }
 }

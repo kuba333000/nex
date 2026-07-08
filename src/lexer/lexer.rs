@@ -65,10 +65,6 @@ impl Lexer {
             "return" => TokenKind::Return,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
-            
-            "Str" => TokenKind::StrType,
-            "Int" => TokenKind::IntType,
-            "Real" => TokenKind::RealType,
 
             _ => TokenKind::Identifier,
         };
@@ -195,6 +191,8 @@ impl Lexer {
         let kind = match ch {
             ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
+
+            ',' => TokenKind::Comma,
 
             '(' => TokenKind::LeftParen,
             ')' => TokenKind::RightParen,
