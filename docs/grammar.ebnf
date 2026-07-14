@@ -20,16 +20,32 @@ global_variable_decl = "let" IDENTIFIER "=" expression ;
 function_signature = "func" IDENTIFIER ":" type "->" type ;
 procedure_signature = "proc" IDENTIFIER ":" type "->" type ;
 
-callable_definition = "def" IDENTIFIER "(" sep_by[IDENTIFIER, ","] ")" ":=" block ;
+callable_definition = "def" IDENTIFIER "(" sep_by[IDENTIFIER, ","] ")" block ;
 
 type = IDENTIFIER | "()" | "(" sep_by_two_or_more[type, ","] ")" ;
 
 !block = "{" statement* "}" ;
 
-!statement = local_variable_decl
-           | if
-           | procedure_call
+!statement = statement_type ";" ;
+
+statement_type = local_variable_decl
+               | if
+               | return
+               | procedure_call
 
 local_variable_decl = "let" IDENTIFIER "=" expression ;
 
 if = "if" expression block_statement ("else" (if | block_statement))? ;
+
+procedure_call = IDENTIFIER "(" sep_by[expression, ","] ")" ;
+
+return = "return" expression ;
+
+!expression = when
+            | primary_expression
+
+when = "when" expression block_expression ("else" (when | block_expression))? ;
+
+primary_expression = { Pratt parser } ;
+
+block_statement & block_expression = "{" statement* "}" ;

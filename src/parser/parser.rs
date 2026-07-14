@@ -5,9 +5,26 @@ use crate::parser::nodes::{Block, Parameter, UnaryOp, BinaryOp, ExprKind, StmtKi
 
 type BpSize = u8;
 
+macro_rules! token_kinds {
+    ($($token:ident)|*) => {
+        vec![
+            $(
+                TokenKind::$token,
+            )*
+        ]
+    };
+}
+
 #[derive(Debug)]
 pub enum ParseError {
-    TokenKindError,
+    UnexpectedToken {
+        expected: TokenKind,
+        found: Token,
+    },
+    UnexpectedTokenOneOf {
+        expected: Vec<TokenKind>,
+        found: Token,
+    },
     NegativeBoundaryError,
     ExceededBoundaryError,
 }
@@ -38,7 +55,10 @@ impl Parser {
         if token.token_kind == token_kind {
             self.pos += 1;
             Ok(token)
-        } else { Err(ParseError::TokenKindError) }
+        } else { Err(ParseError::UnexpectedToken {
+            expected: token_kind,
+            found: token,
+        }) }
     }
 
     fn node_statement<F>(&mut self, f: F) -> Result<Stmt, ParseError>
@@ -50,6 +70,20 @@ impl Parser {
         let end = self.look(-1)?.span.end;
 
         Ok(Stmt {
+            kind,
+            span: Span { start, end }
+        })
+    }
+
+    fn node_expression<F>(&mut self, f: F) -> Result<Expr, ParseError>
+    where
+        F: FnOnce(&mut Self) -> Result<ExprKind, ParseError>,
+    {
+        let start = self.peek().span.start;
+        let kind = f(self)?;
+        let end = self.look(-1)?.span.end;
+
+        Ok(Expr {
             kind,
             span: Span { start, end }
         })
@@ -72,12 +106,22 @@ impl Parser {
 
     fn get_infix_op(&self, op: TokenKind) -> Option<(BinaryOp, BpSize, BpSize)> {
         match op {
-            TokenKind::Equal => Some((BinaryOp::Equal, 9, 10)),
-            TokenKind::NotEq => Some((BinaryOp::NotEq, 9, 10)),
-            TokenKind::Add => Some((BinaryOp::Add, 19, 20)),
-            TokenKind::Sub => Some((BinaryOp::Sub, 19, 20)),
-            TokenKind::Mul => Some((BinaryOp::Mult, 21, 22)),
-            TokenKind::Div => Some((BinaryOp::Div, 21, 22)),
+            TokenKind::Assign => Some((BinaryOp::Assign, 1, 2)),
+            
+            TokenKind::Greater => Some((BinaryOp::Greater, 3, 4)),
+            TokenKind::Less => Some((BinaryOp::Less, 3, 4)),
+            TokenKind::GreaterEq => Some((BinaryOp::GreaterEq, 3, 4)),
+            TokenKind::LessEq => Some((BinaryOp::LessEq, 3, 4)),
+
+            TokenKind::Equal => Some((BinaryOp::Equal, 4, 5)),
+            TokenKind::NotEq => Some((BinaryOp::NotEq, 4, 5)),
+
+            TokenKind::Concat => Some((BinaryOp::Concat, 6, 7)),
+
+            TokenKind::Add => Some((BinaryOp::Add, 8, 9)),
+            TokenKind::Sub => Some((BinaryOp::Sub, 8, 9)),
+            TokenKind::Mul => Some((BinaryOp::Mult, 10, 11)),
+            TokenKind::Div => Some((BinaryOp::Div, 10, 11)),
             _ => None,
         }
     }
@@ -94,15 +138,19 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Decl, ParseError> {
-        let start = self.peek().span.start;
+        let token = self.peek();
+        let start = token.span.start;
 
-        let kind = match self.peek().token_kind {
+        let kind = match token.token_kind {
             TokenKind::Let => self.global_variable_decl(),
             TokenKind::Func => self.function_signature(),
             TokenKind::Proc => self.procedure_signature(),
             TokenKind::Def => self.callable_definition(),
             
-            _ => return Err(ParseError::TokenKindError),
+            _ => return Err(ParseError::UnexpectedTokenOneOf {
+                expected: token_kinds!(Let | Func | Proc | Def),
+                found: token
+            }),
         }?;
 
         let end = self.look(-1)?.span.end;
@@ -114,7 +162,7 @@ impl Parser {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
         self.consume(TokenKind::Assign)?;
-        let value = self.expression(0)?;
+        let value = self.expression()?;
         self.consume(TokenKind::Semicolon)?;
 
         Ok(DeclKind::GlobalVariable { name, value: Box::new(value) })
@@ -145,29 +193,30 @@ impl Parser {
     fn callable_definition(&mut self) -> Result<DeclKind, ParseError> {
         self.consume(TokenKind::Def)?;
         let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
-        self.consume(TokenKind::LeftParen)?;
 
-        let mut paramaters = Vec::new();
-        if self.peek().token_kind == TokenKind::Identifier {
-            paramaters.push(Parameter {
-                name: self.consume(TokenKind::Identifier)?.lexeme.unwrap(),
-                default: None // TODO: handle default function parameters in the future
-            });
-
-            while self.peek().token_kind == TokenKind::Comma {
-                paramaters.push(Parameter {
+        // parameters
+        let mut parameters = Vec::new();
+        if self.try_consume(TokenKind::LeftParen).is_some() {
+            if self.peek().token_kind == TokenKind::Identifier {
+                parameters.push(Parameter {
                     name: self.consume(TokenKind::Identifier)?.lexeme.unwrap(),
                     default: None // TODO: handle default function parameters in the future
                 });
             }
-        }
 
-        self.consume(TokenKind::RightParen)?;
-        self.consume(TokenKind::Defined)?;
+            while self.try_consume(TokenKind::Comma).is_some() {
+                parameters.push(Parameter {
+                    name: self.consume(TokenKind::Identifier)?.lexeme.unwrap(),
+                    default: None // TODO: handle default function parameters in the future
+                });
+            }
+
+            self.consume(TokenKind::RightParen)?;
+        };
 
         let body = self.block()?;
 
-        Ok(DeclKind::Callable { name, paramaters, body })
+        Ok(DeclKind::Callable { name, parameters, body })
     }
 
     fn type_(&mut self) -> Result<Type, ParseError> {
@@ -213,13 +262,20 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        let start = self.peek().span.start;
+        let token = self.peek();
+        let start = token.span.start;
 
-        let kind = match self.peek().token_kind {
+        let kind = match token.token_kind {
             TokenKind::Let => self.local_variable_decl(),
-            TokenKind::If => self.if_statement(),
+            TokenKind::If => self.if_(),
+            TokenKind::Return => self.return_(),
+            TokenKind::Leave => self.leave(),
+            TokenKind::Identifier => self.procedure_call(),
             
-            _ => return Err(ParseError::TokenKindError),
+            _ => return Err(ParseError::UnexpectedTokenOneOf {
+                expected: token_kinds!(Let | If | Return | Leave),
+                found: token
+            }),
         }?;
 
         let end = self.look(-1).unwrap().span.end;
@@ -231,25 +287,24 @@ impl Parser {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
         self.consume(TokenKind::Assign)?;
-        let value = self.expression(0)?;
+        let value = self.expression()?;
         self.consume(TokenKind::Semicolon)?;
 
         Ok(StmtKind::LocalVariable { name, value: Box::new(value) })
     }
 
-    fn if_statement(&mut self) -> Result<StmtKind, ParseError> {
+    fn if_(&mut self) -> Result<StmtKind, ParseError> {
         self.consume(TokenKind::If)?;
-        let cond = Box::new(self.expression(0)?);
+        let cond = Box::new(self.expression()?);
         let if_body = self.block()?;
 
         if self.try_consume(TokenKind::Else).is_some() {
-            self.consume(TokenKind::Else)?;
-
-            let else_body = match self.peek().token_kind {
-                TokenKind::If => self.node_statement(Self::if_statement),
+            let token = self.peek();
+            let else_body = match token.token_kind {
+                TokenKind::If => self.node_statement(Self::if_),
                 TokenKind::LeftBrace => self.node_statement(|parser| Ok(StmtKind::Block(parser.block()?))),
 
-                _ => Err(ParseError::TokenKindError),
+                _ => Err(ParseError::UnexpectedTokenOneOf { expected: token_kinds!(If | LeftBrace), found: token }),
             }?;
 
             return Ok(StmtKind::If { cond, if_body, else_body: Some(Box::new(else_body)) });
@@ -258,16 +313,88 @@ impl Parser {
         Ok(StmtKind::If { cond, if_body, else_body: None })
     }
 
+    fn return_(&mut self) -> Result<StmtKind, ParseError> {
+        self.consume(TokenKind::Return)?;
+        let value = self.expression()?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(StmtKind::Return { value: Box::new(value) })
+    }
+
+    fn leave(&mut self) -> Result<StmtKind, ParseError> {
+        self.consume(TokenKind::Leave)?;
+        let value = self.expression()?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(StmtKind::Leave { value: Box::new(value) })
+    }
+
+    fn procedure_call(&mut self) -> Result<StmtKind, ParseError> {
+        let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
+
+        self.consume(TokenKind::LeftParen)?;
+        let mut arguments = Vec::new();
+
+        arguments.push(self.expression()?);
+        while self.try_consume(TokenKind::Comma).is_some() {
+            arguments.push(self.expression()?);
+        }
+
+        self.consume(TokenKind::RightParen)?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(StmtKind::ProcedureCall { name, arguments })
+    }
+
     fn block(&mut self) -> Result<Block, ParseError> {
+        self.consume(TokenKind::LeftBrace)?;
+
         let mut nodes = Vec::new();
         while self.peek().token_kind != TokenKind::RightBrace {
             nodes.push(self.statement()?)
         };
 
+        self.consume(TokenKind::RightBrace)?;
+
         Ok(Block { statements: nodes })
     }
 
-    fn expression(&mut self, min_bp: BpSize) -> Result<Expr, ParseError> {
+    fn expression(&mut self) -> Result<Expr, ParseError> {
+        let token = self.peek();
+        let start = token.span.start;
+
+        let kind = match token.token_kind {
+            TokenKind::When => self.when(),
+            
+            _ => return self.primary_expression(0),
+        }?;
+
+        let end = self.look(-1).unwrap().span.end;
+
+        Ok(Expr { kind, span: Span { start, end } })
+    }
+
+    fn when(&mut self) -> Result<ExprKind, ParseError> {
+        self.consume(TokenKind::When)?;
+        let cond = Box::new(self.expression()?);
+        let when_body = self.block()?;
+
+        if self.try_consume(TokenKind::Else).is_some() {            
+            let token = self.peek();
+            let else_body = match token.token_kind {
+                TokenKind::When => self.node_expression(Self::when),
+                TokenKind::LeftBrace => self.node_expression(|parser| Ok(ExprKind::Block(parser.block()?))),
+
+                _ => Err(ParseError::UnexpectedTokenOneOf { expected: token_kinds!(If | LeftBrace), found: token }),
+            }?;
+
+            return Ok(ExprKind::When { cond, when_body, else_body: Some(Box::new(else_body)) });
+        };
+
+        Ok(ExprKind::When { cond, when_body, else_body: None })
+    }
+
+    fn primary_expression(&mut self, min_bp: BpSize) -> Result<Expr, ParseError> {
         let mut lhs = self.prefix()?;
         
         loop {
@@ -281,7 +408,7 @@ impl Parser {
             
             self.next();
 
-            let rhs = self.expression(rbp)?;
+            let rhs = self.primary_expression(rbp)?;
 
             lhs = Expr {
                 kind: ExprKind::Binary {
@@ -304,7 +431,7 @@ impl Parser {
             let op_span = token.span;
             self.consume(kind)?;
 
-            let operand = self.expression(bp)?;
+            let operand = self.primary_expression(bp)?;
 
             let span = Span::new_by_spans(op_span, operand.span);
             return Ok(Expr {
@@ -327,13 +454,35 @@ impl Parser {
             TokenKind::Number => {
                 self.consume(TokenKind::Number)?;
 
-                let lexeme = token.lexeme.unwrap();
-                
-                if lexeme.contains('.')
-                { Ok(ExprKind::Real(lexeme.parse::<f64>().unwrap())) } else { Ok(ExprKind::Integer(lexeme.parse::<i64>().unwrap())) }
+                Ok(ExprKind::Number(token.lexeme.unwrap()))
+            },
+
+            TokenKind::String => {
+                self.consume(TokenKind::String)?;
+
+                Ok(ExprKind::String(token.lexeme.unwrap()))
+            }
+
+            TokenKind::Identifier => {
+                self.consume(TokenKind::Identifier)?;
+                if self.try_consume(TokenKind::LeftParen).is_some() { // function call
+                    let mut arguments = Vec::new();
+                    if self.peek().token_kind != TokenKind::RightParen {
+                        arguments.push(self.expression()?);
+                        while self.try_consume(TokenKind::Comma).is_some() {
+                            arguments.push(self.expression()?);
+                        }
+                    }
+
+                    self.consume(TokenKind::RightParen)?;
+
+                    Ok(ExprKind::FunctionCall { name: token.lexeme.unwrap(), arguments })
+                } else {
+                    Ok(ExprKind::Identifier(token.lexeme.unwrap()))
+                }
             },
             
-            _ => Err(ParseError::TokenKindError),
+            _ => Err(ParseError::UnexpectedTokenOneOf { expected: token_kinds!(Number | String | Identifier), found: token }),
         }?;
 
         Ok(Expr {

@@ -4,13 +4,14 @@ use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
-    Display,
     Let,
     Func,
     Proc,
     Def,
     Return,
+    Leave,
     If,
+    When,
     Else,
 
     Identifier,

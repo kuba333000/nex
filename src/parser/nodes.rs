@@ -20,6 +20,8 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
+    Assign,
+
     Equal,
     NotEq,
     Greater,
@@ -37,12 +39,20 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum ExprKind {
+    When {
+        cond: Box<Expr>,
+        when_body: Block,
+        else_body: Option<Box<Expr>>,
+    },
+
+    Number(String),
     String(String),
-
-    Integer(i64),
-    Real(f64),
-
     Identifier(String),
+    
+    FunctionCall {
+        name: String,
+        arguments: Vec<Expr>,
+    },
 
     Unary {
         op: UnaryOp,
@@ -71,6 +81,19 @@ pub enum StmtKind {
         else_body: Option<Box<Stmt>>,
     },
 
+    Return {
+        value: Box<Expr>,
+    },
+
+    Leave {
+        value: Box<Expr>,
+    },
+
+    ProcedureCall {
+        name: String,
+        arguments: Vec<Expr>,
+    },
+
     Block(Block),
 }
 
@@ -94,7 +117,7 @@ pub enum DeclKind {
 
     Callable {
         name: String,
-        paramaters: Vec<Parameter>,
+        parameters: Vec<Parameter>,
         body: Block,
     },
 }
@@ -152,6 +175,8 @@ impl fmt::Display for UnaryOp {
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let op = match self {
+            BinaryOp::Assign => "=",
+
             BinaryOp::Equal => "==",
             BinaryOp::NotEq => "!=",
             BinaryOp::Greater => ">",
@@ -174,11 +199,18 @@ impl fmt::Display for BinaryOp {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            ExprKind::String(s) => write!(f, "\"{s}\""),
-            ExprKind::Integer(i) => write!(f, "{i}"),
-            ExprKind::Real(r) => write!(f, "{r}"),
+            ExprKind::When { cond, when_body, else_body } => {
+                match else_body {
+                    Some(body) => write!(f, "If({}, {}, {})", cond, when_body, *body),
+                    None => write!(f, "If({}, {})", cond, when_body),
+                }
+            }
+
+            ExprKind::String(v) => write!(f, "\"{v}\""),
+            ExprKind::Number(v) => write!(f, "{v}"),
 
             ExprKind::Identifier(name) => write!(f, "{name}"),
+            ExprKind::FunctionCall { name, arguments } => write!(f, "FunctionCall({}, {:?})", name, arguments),
 
             ExprKind::Unary { op, expr } => {
                 write!(f, "({}{})", op, expr)
@@ -209,6 +241,16 @@ impl fmt::Display for Stmt {
                 }
             },
 
+            StmtKind::Return { value } => {
+                write!(f, "Return({})", value)
+            }
+
+            StmtKind::Leave { value } => {
+                write!(f, "Leave({})", value)
+            }
+
+            StmtKind::ProcedureCall { name, arguments } => write!(f, "ProcedureCall({}, {:?})", name, arguments),
+
             StmtKind::Block(block) => {
                 write!(f, "{}", block)
             }
@@ -231,8 +273,8 @@ impl fmt::Display for Decl {
                 write!(f, "FunctionSignature({}, {})", name, domain)
             },
 
-            DeclKind::Callable { name, paramaters, body } => {
-                write!(f, "CallableDefinition({}, {:?}, {})", name, paramaters, body)
+            DeclKind::Callable { name, parameters, body } => {
+                write!(f, "CallableDefinition({}, {:?}, {})", name, parameters, body)
             },
         }
     }

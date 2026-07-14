@@ -58,12 +58,14 @@ impl Lexer {
         }
 
         let kind = match identifier.as_str() {
-            "display" => TokenKind::Display,
             "let" => TokenKind::Let,
             "func" => TokenKind::Func,
+            "proc" => TokenKind::Proc,
             "def" => TokenKind::Def,
             "return" => TokenKind::Return,
+            "leave" => TokenKind::Leave,
             "if" => TokenKind::If,
+            "when" => TokenKind::When,
             "else" => TokenKind::Else,
 
             _ => TokenKind::Identifier,
