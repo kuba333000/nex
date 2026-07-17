@@ -20,7 +20,7 @@ pub enum TokenKind {
     Number,
 
     Assign,
-    Defined,
+    Walrus,
 
     Equal,
     NotEq,
@@ -55,6 +55,8 @@ pub enum TokenKind {
 
     EndOfFile,
     Invalid,
+
+    Missing(Box<TokenKind>),
 }
 
 #[derive(Debug, Clone)]

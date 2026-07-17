@@ -120,6 +120,8 @@ pub enum DeclKind {
         parameters: Vec<Parameter>,
         body: Block,
     },
+
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -261,21 +263,20 @@ impl fmt::Display for Stmt {
 impl fmt::Display for Decl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            DeclKind::GlobalVariable { name, value } => {
-                write!(f, "GlobalVariable({}, {})", name, value)
-            },
+            DeclKind::GlobalVariable { name, value }
+                => write!(f, "GlobalVariable({}, {})", name, value),
 
-            DeclKind::FunctionSignature { name, domain, codomain } => {
-                write!(f, "FunctionSignature({}, {}, {})", name, domain, codomain)
-            },
+            DeclKind::FunctionSignature { name, domain, codomain }
+                => write!(f, "FunctionSignature({}, {}, {})", name, domain, codomain),
 
-            DeclKind::ProcedureSignature { name, domain } => {
-                write!(f, "FunctionSignature({}, {})", name, domain)
-            },
+            DeclKind::ProcedureSignature { name, domain }
+                => write!(f, "FunctionSignature({}, {})", name, domain),
 
-            DeclKind::Callable { name, parameters, body } => {
-                write!(f, "CallableDefinition({}, {:?}, {})", name, parameters, body)
-            },
+            DeclKind::Callable { name, parameters, body }
+                => write!(f, "CallableDefinition({}, {:?}, {})", name, parameters, body),
+
+            DeclKind::Error
+                => write!(f, "DeclError"),
         }
     }
 }

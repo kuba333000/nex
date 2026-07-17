@@ -171,7 +171,7 @@ impl Lexer {
 
         // multi-character mapping
         let token = match () {
-            _ if self.peek_eq(":=") => Some(Token::new(TokenKind::Defined, None, Span { start: start_pos, end: start_pos + 2 })),
+            _ if self.peek_eq(":=") => Some(Token::new(TokenKind::Walrus, None, Span { start: start_pos, end: start_pos + 2 })),
 
             _ if self.peek_eq("->") => Some(Token::new(TokenKind::Arrow, None, Span { start: start_pos, end: start_pos + 2 })),
             

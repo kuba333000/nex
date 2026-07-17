@@ -5,6 +5,7 @@
 letter = "a".."z" | "A".."Z" ;
 digit = "0".."9" ;
 
+COMMENT = "//" .* ;
 IDENTIFIER = ( letter | "_" ) ( letter | digit | "_" )* ;
 
 !program = declaration* ;

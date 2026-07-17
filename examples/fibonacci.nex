@@ -1,0 +1,18 @@
+let x = 10;
+
+func factorial : Int -> Int;
+
+def factorial(n) {
+    return when n <= 1 { leave 1; } else { leave n * factorial(n-1); };
+}
+
+proc main : ();
+
+def main {
+    display("10! = " & factorial(x));
+
+    display("This
+    is a
+    multi-line
+    string");
+}

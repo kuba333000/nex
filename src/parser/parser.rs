@@ -1,4 +1,7 @@
+use std::fmt::DebugList;
+
 use crate::span::Span;
+use crate::diagnostic::{Severity, Diagnostic};
 
 use crate::lexer::tokens::{Token, TokenKind};
 use crate::parser::nodes::{Block, Parameter, UnaryOp, BinaryOp, ExprKind, StmtKind, DeclKind, TypeKind, Expr, Stmt, Decl, Type};
@@ -15,33 +18,22 @@ macro_rules! token_kinds {
     };
 }
 
-#[derive(Debug)]
-pub enum ParseError {
-    UnexpectedToken {
-        expected: TokenKind,
-        found: Token,
-    },
-    UnexpectedTokenOneOf {
-        expected: Vec<TokenKind>,
-        found: Token,
-    },
-    NegativeBoundaryError,
-    ExceededBoundaryError,
-}
+pub struct ParseError;
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Parser {
-    pub fn new(token_vec: Vec<Token>) -> Self { Self { tokens: token_vec, pos: 0, } }
+    pub fn new(token_vec: Vec<Token>) -> Self { Self { tokens: token_vec, pos: 0, diagnostics: Vec::new() } }
 
     fn peek(&self) -> Token { self.tokens.get(self.pos).cloned().unwrap() }
 
-    fn look(&self, offset: isize) -> Result<Token, ParseError> {
-        let index = self.pos.checked_add_signed(offset).ok_or(ParseError::NegativeBoundaryError)?;
-        self.tokens.get(index).cloned().ok_or(ParseError::ExceededBoundaryError)
+    fn look(&self, offset: isize) -> Token {
+        let index = self.pos.checked_add_signed(offset).unwrap();
+        self.tokens.get(index).cloned().unwrap()
     }
 
     fn next(&mut self) -> Token {
@@ -50,15 +42,23 @@ impl Parser {
         token
     }
 
-    fn consume(&mut self, token_kind: TokenKind) -> Result<Token, ParseError> {
+    fn error(&mut self, span: Span, message: String) {
+        self.diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            message,
+            span,
+        });
+    }
+
+    fn consume(&mut self, token_kind: TokenKind) -> Token {
         let token = self.peek();
         if token.token_kind == token_kind {
             self.pos += 1;
-            Ok(token)
-        } else { Err(ParseError::UnexpectedToken {
-            expected: token_kind,
-            found: token,
-        }) }
+            token
+        } else {
+            self.error(token.span, format!("Expected token kind \"{:?}\", found \"{:?}\" instead.", token_kind, token.token_kind));
+            Token { token_kind: TokenKind::Missing(Box::new(token_kind)), lexeme: None, span: token.span }
+        }
     }
 
     fn node_statement<F>(&mut self, f: F) -> Result<Stmt, ParseError>
@@ -67,7 +67,7 @@ impl Parser {
     {
         let start = self.peek().span.start;
         let kind = f(self)?;
-        let end = self.look(-1)?.span.end;
+        let end = self.look(-1).span.end;
 
         Ok(Stmt {
             kind,
@@ -81,7 +81,7 @@ impl Parser {
     {
         let start = self.peek().span.start;
         let kind = f(self)?;
-        let end = self.look(-1)?.span.end;
+        let end = self.look(-1).span.end;
 
         Ok(Expr {
             kind,
@@ -137,7 +137,7 @@ impl Parser {
         Ok(nodes)
     }
 
-    fn declaration(&mut self) -> Result<Decl, ParseError> {
+    fn declaration(&mut self) -> Decl {
         let token = self.peek();
         let start = token.span.start;
 
@@ -147,50 +147,50 @@ impl Parser {
             TokenKind::Proc => self.procedure_signature(),
             TokenKind::Def => self.callable_definition(),
             
-            _ => return Err(ParseError::UnexpectedTokenOneOf {
-                expected: token_kinds!(Let | Func | Proc | Def),
-                found: token
-            }),
-        }?;
+            _ => {
+                self.error(Span { start, end: token.span.end }, format!("Expected declaration to start with 'let', 'func', 'proc', 'def'. Found {:?}", token.token_kind));
+                DeclKind::Error
+            },
+        };
 
         let end = self.look(-1)?.span.end;
 
-        Ok(Decl { kind, span: Span { start, end } })
+        Decl { kind, span: Span { start, end } }
     }
 
-    fn global_variable_decl(&mut self) -> Result<DeclKind, ParseError> {
-        self.consume(TokenKind::Let)?;
-        let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
-        self.consume(TokenKind::Assign)?;
-        let value = self.expression()?;
-        self.consume(TokenKind::Semicolon)?;
+    fn global_variable_decl(&mut self) -> DeclKind {
+        self.consume(TokenKind::Let);
+        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        self.consume(TokenKind::Assign);
+        let value = self.expression();
+        self.consume(TokenKind::Semicolon);
 
-        Ok(DeclKind::GlobalVariable { name, value: Box::new(value) })
+        DeclKind::GlobalVariable { name, value: Box::new(value) }
     }
 
-    fn function_signature(&mut self) -> Result<DeclKind, ParseError> {
-        self.consume(TokenKind::Func)?;
-        let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
-        self.consume(TokenKind::Colon)?;
-        let domain = self.type_()?;
-        self.consume(TokenKind::Arrow)?;
-        let codomain = self.type_()?;
-        self.consume(TokenKind::Semicolon)?;
+    fn function_signature(&mut self) -> DeclKind {
+        self.consume(TokenKind::Func);
+        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        self.consume(TokenKind::Colon);
+        let domain = self.type_();
+        self.consume(TokenKind::Arrow);
+        let codomain = self.type_();
+        self.consume(TokenKind::Semicolon);
 
-        Ok(DeclKind::FunctionSignature { name, domain: Box::new(domain), codomain: Box::new(codomain) })
+        DeclKind::FunctionSignature { name, domain: Box::new(domain), codomain: Box::new(codomain) }
     }
 
-    fn procedure_signature(&mut self) -> Result<DeclKind, ParseError> {
-        self.consume(TokenKind::Proc)?;
-        let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
-        self.consume(TokenKind::Colon)?;
-        let domain = self.type_()?;
-        self.consume(TokenKind::Semicolon)?;
+    fn procedure_signature(&mut self) -> DeclKind {
+        self.consume(TokenKind::Proc);
+        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        self.consume(TokenKind::Colon);
+        let domain = self.type_();
+        self.consume(TokenKind::Semicolon);
 
-        Ok(DeclKind::ProcedureSignature { name, domain: Box::new(domain) })
+        DeclKind::ProcedureSignature { name, domain: Box::new(domain) }
     }
 
-    fn callable_definition(&mut self) -> Result<DeclKind, ParseError> {
+    fn callable_definition(&mut self) -> DeclKind {
         self.consume(TokenKind::Def)?;
         let name = self.consume(TokenKind::Identifier)?.lexeme.unwrap();
 
