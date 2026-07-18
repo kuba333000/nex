@@ -72,7 +72,7 @@ impl Lexer {
         };
 
         Token {
-            token_kind: kind.clone(),
+            kind: kind.clone(),
             lexeme: if kind == TokenKind::Identifier { Some(identifier.clone()) } else { None },
             span: Span { start: start_pos, end: self.pos },
         }
@@ -115,7 +115,7 @@ impl Lexer {
         }
 
         Token {
-            token_kind: if has_start_digits || has_end_digits { TokenKind::Number }
+            kind: if has_start_digits || has_end_digits { TokenKind::Number }
             else { TokenKind::Dot },
 
             lexeme: Some(number),
@@ -138,7 +138,7 @@ impl Lexer {
         }
 
         Token {
-            token_kind: TokenKind::String,
+            kind: TokenKind::String,
             lexeme: Some(string),
             span: Span { start: start_pos, end: self.pos },
         }
@@ -150,7 +150,7 @@ impl Lexer {
 
         let Some(ch) = self.peek() else {
             return Token {
-                token_kind: TokenKind::EndOfFile,
+                kind: TokenKind::EndOfFile,
                 lexeme: None,
                 span: Span { start: start_pos, end: self.pos },
             };
@@ -223,7 +223,7 @@ impl Lexer {
         self.next();
 
         Token {
-            token_kind: kind.clone(),
+            kind: kind.clone(),
             lexeme: if kind == TokenKind::Invalid { Some(ch.to_string()) } else { None },
             span: Span { start: start_pos, end: self.pos },
         }
@@ -237,11 +237,11 @@ impl Lexer {
             let token = self.next_token();
 
             match token {
-                Token { token_kind: TokenKind::EndOfFile, .. } => {
+                Token { kind: TokenKind::EndOfFile, .. } => {
                     tokens.push(token);
                     break;
                 }
-                Token { token_kind: TokenKind::Invalid, lexeme: Some(c), .. } => {
+                Token { kind: TokenKind::Invalid, lexeme: Some(c), .. } => {
                     panic!("unexpected character: {}", c);
                 }
                 _ => {}

@@ -33,5 +33,5 @@ impl Compiler {
 
     pub fn lex(&self, input: &str) -> Vec<Token> { Lexer::new(input).get_tokens() }
 
-    pub fn parse(&self, token_vec: Vec<Token>) -> Vec<Decl> { Parser::new(token_vec).parse().unwrap() }
+    pub fn parse(&self, token_vec: Vec<Token>) -> Vec<Decl> { Parser::new(token_vec).parse() }
 }

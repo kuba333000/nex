@@ -66,6 +66,8 @@ pub enum ExprKind {
     },
 
     Block(Block),
+
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +97,8 @@ pub enum StmtKind {
     },
 
     Block(Block),
+
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -225,6 +229,9 @@ impl fmt::Display for Expr {
             ExprKind::Block(block) => {
                 write!(f, "{}", block)
             }
+
+            ExprKind::Error
+                => write!(f, "ExprError"),
         }
     }
 }
@@ -256,6 +263,9 @@ impl fmt::Display for Stmt {
             StmtKind::Block(block) => {
                 write!(f, "{}", block)
             }
+
+            StmtKind::Error
+                => write!(f, "StmtError"),
         }
     }
 }

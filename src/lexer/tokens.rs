@@ -61,20 +61,20 @@ pub enum TokenKind {
 
 #[derive(Debug, Clone)]
 pub struct Token {
-    pub token_kind: TokenKind,
+    pub kind: TokenKind,
     pub lexeme: Option<String>,
     pub span: Span,
 }
 
 impl Token {
-    pub fn new(token_kind: TokenKind, lexeme: Option<String>, span: Span) -> Self { Self { token_kind, lexeme, span } }
+    pub fn new(kind: TokenKind, lexeme: Option<String>, span: Span) -> Self { Self { kind, lexeme, span } }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.lexeme {
-            Some(lexeme) => write!(f, "{:?}(\"{}\")", self.token_kind, lexeme.escape_debug()),
-            None => write!(f, "{:?}", self.token_kind),
+            Some(lexeme) => write!(f, "{:?}(\"{}\")", self.kind, lexeme.escape_debug()),
+            None => write!(f, "{:?}", self.kind),
         }
     }
 }
