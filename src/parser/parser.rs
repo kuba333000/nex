@@ -6,20 +6,16 @@ use crate::parser::nodes::{Block, Parameter, UnaryOp, BinaryOp, ExprKind, StmtKi
 
 type BpSize = u8;
 
-macro_rules! token_kinds {
-    ($($token:ident)|*) => {
-        vec![
-            $(
-                TokenKind::$token,
-            )*
-        ]
+macro_rules! matches_token_kind {
+    ($expr:expr, $($kind:ident)|+ $(,)?) => {
+        matches!($expr, $(TokenKind::$kind)|+)
     };
 }
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
-    diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl Parser {
@@ -46,13 +42,25 @@ impl Parser {
         });
     }
 
+    fn synchronize(&mut self) {
+        self.next();
+
+        while self.peek().kind != TokenKind::EndOfFile {
+            if self.look(-1).kind == TokenKind::Semicolon { return; };
+
+            if matches_token_kind!(self.peek().kind, Let | Func | Proc | Def | If | Return | Leave | When) { return; };
+
+            self.next();
+        }
+    }
+        
     fn consume(&mut self, token_kind: TokenKind) -> Token {
         let token = self.peek();
         if token.kind == token_kind {
             self.pos += 1;
             token
         } else {
-            self.error(token.span, format!("Expected token kind \"{:?}\", found \"{:?}\" instead.", token_kind, token.kind));
+            self.error(token.span, format!("expected '{}', found '{}'", token_kind, token.kind));
             Token { kind: TokenKind::Missing(Box::new(token_kind)), lexeme: None, span: token.span }
         }
     }
@@ -144,7 +152,12 @@ impl Parser {
             TokenKind::Def => self.callable_definition(),
             
             _ => {
-                self.error(Span { start, end: token.span.end }, format!("Expected declaration to start with 'let', 'func', 'proc', 'def'. Found {:?}", token.kind));
+                self.error(Span { start, end: token.span.end }, format!(
+                    "expected declaration, found '{}'",
+                    token.kind
+                ));
+
+                self.synchronize();
                 DeclKind::Error
             },
         };
@@ -269,11 +282,11 @@ impl Parser {
             
             _ => {
                 self.error(Span { start, end: token.span.end }, format!(
-                    "Expected statement start with \"{:?}\", found \"{:?}\" instead.",
-                    token_kinds!(Let | If | Return | Leave | Identifier),
+                    "expected statement, found '{}'",
                     token.kind
                 ));
 
+                self.synchronize();
                 StmtKind::Error
             },
         };
@@ -298,16 +311,15 @@ impl Parser {
         let cond = Box::new(self.expression());
         let if_body = self.block();
 
-        if self.try_consume(TokenKind::Else).is_some() {
+        if let Some(else_tok) = self.try_consume(TokenKind::Else) {
             let token = self.peek();
             let else_body = match token.kind {
                 TokenKind::If => self.node_statement(Self::if_),
                 TokenKind::LeftBrace => self.node_statement(|parser| StmtKind::Block(parser.block())),
 
                 _ => {
-                    self.error(token.span, format!(
-                        "Expected token kind one of \"{:?}\", found \"{:?}\" instead.",
-                        token_kinds!(If | LeftBrace),
+                    self.error(Span { start: else_tok.span.start, end: token.span.end }, format!(
+                        "expected 'else' to be followed by 'if' or '{{', found '{}'",
                         token.kind
                     ));
 
@@ -323,18 +335,22 @@ impl Parser {
 
     fn return_(&mut self) -> StmtKind {
         self.consume(TokenKind::Return);
+        if self.try_consume(TokenKind::Semicolon).is_some() { return StmtKind::Return; }
+
         let value = self.expression();
         self.consume(TokenKind::Semicolon);
 
-        StmtKind::Return { value: Box::new(value) }
+        StmtKind::ReturnValue { value: Box::new(value) }
     }
 
     fn leave(&mut self) -> StmtKind {
         self.consume(TokenKind::Leave);
+        if self.try_consume(TokenKind::Semicolon).is_some() { return StmtKind::Leave; }
+
         let value = self.expression();
         self.consume(TokenKind::Semicolon);
 
-        StmtKind::Leave { value: Box::new(value) }
+        StmtKind::LeaveValue { value: Box::new(value) }
     }
 
     fn procedure_call(&mut self) -> StmtKind {
@@ -387,19 +403,19 @@ impl Parser {
         let cond = Box::new(self.expression());
         let when_body = self.block();
 
-        if self.try_consume(TokenKind::Else).is_some() {            
+        if let Some(else_tok) = self.try_consume(TokenKind::Else) {            
             let token = self.peek();
             let else_body = match token.kind {
                 TokenKind::When => self.node_expression(Self::when),
                 TokenKind::LeftBrace => self.node_expression(|parser| ExprKind::Block(parser.block())),
 
                 _ => {
-                    self.error(token.span, format!(
-                        "Expected token kind one of \"{:?}\", found \"{:?}\" instead.",
-                        token_kinds!(If | LeftBrace),
+                    self.error(Span { start: else_tok.span.start, end: token.span.end }, format!(
+                        "expected 'else' to be followed by 'when' or '{{', found '{}'",
                         token.kind
                     ));
 
+                    self.synchronize();
                     Expr { kind: ExprKind::Error, span: token.span }
                 }
             };
@@ -502,8 +518,7 @@ impl Parser {
             
             _ => {
                 self.error(token.span, format!(
-                    "Expected token kind one of \"{:?}\", found \"{:?}\" instead.",
-                    token_kinds!(Number | String | Identifier),
+                    "expected literal, found '{}'",
                     token.kind
                 ));
 

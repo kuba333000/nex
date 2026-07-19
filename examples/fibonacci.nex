@@ -8,8 +8,10 @@ def factorial(n) {
 
 proc main : ();
 
+return;
+
 def main {
-    display("10! = " & factorial(x));
+    display("10! = " & factorial(x)) return;
 
     display("This
     is a

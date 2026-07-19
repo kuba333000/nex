@@ -83,13 +83,11 @@ pub enum StmtKind {
         else_body: Option<Box<Stmt>>,
     },
 
-    Return {
-        value: Box<Expr>,
-    },
+    Return,
+    ReturnValue { value: Box<Expr>, },
 
-    Leave {
-        value: Box<Expr>,
-    },
+    Leave,
+    LeaveValue { value: Box<Expr>, },
 
     ProcedureCall {
         name: String,
@@ -239,9 +237,8 @@ impl fmt::Display for Expr {
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            StmtKind::LocalVariable { name, value } => {
-                write!(f, "LocalVariable({}, {})", name, value)
-            },
+            StmtKind::LocalVariable { name, value }
+                => write!(f, "LocalVariable({}, {})", name, value),
 
             StmtKind::If { cond, if_body, else_body } => {
                 match else_body {
@@ -249,20 +246,20 @@ impl fmt::Display for Stmt {
                     None => write!(f, "If({}, {})", cond, if_body),
                 }
             },
+            
+            StmtKind::Return => write!(f, "Return"),
+            StmtKind::ReturnValue { value }
+                => write!(f, "Return({})", value),
 
-            StmtKind::Return { value } => {
-                write!(f, "Return({})", value)
-            }
+            StmtKind::Leave => write!(f, "Leave"),
+            StmtKind::LeaveValue { value }
+                => write!(f, "Leave({})", value),
 
-            StmtKind::Leave { value } => {
-                write!(f, "Leave({})", value)
-            }
+            StmtKind::ProcedureCall { name, arguments }
+                => write!(f, "ProcedureCall({}, {:?})", name, arguments),
 
-            StmtKind::ProcedureCall { name, arguments } => write!(f, "ProcedureCall({}, {:?})", name, arguments),
-
-            StmtKind::Block(block) => {
-                write!(f, "{}", block)
-            }
+            StmtKind::Block(block)
+                => write!(f, "{}", block),
 
             StmtKind::Error
                 => write!(f, "StmtError"),
@@ -294,13 +291,11 @@ impl fmt::Display for Decl {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            TypeKind::Named(name) => {
-                write!(f, "Type({name})", )
-            },
+            TypeKind::Named(name)
+                => write!(f, "Type({name})", ),
 
-            TypeKind::Tuple(names) => {
-                write!(f, "TypeTuple({:?})", names)
-            },
+            TypeKind::Tuple(names)
+                => write!(f, "TypeTuple({:?})", names),
         }
     }
 }
