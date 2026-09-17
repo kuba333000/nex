@@ -1,9 +1,12 @@
 build/
+dump/
+info/
 .vscode
 *.exe
 *.obj
 *.pdb
 *.info
+*.dump
 message.txt
 
 # Added by cargo

@@ -1,0 +1,15 @@
+let x = 10;
+
+func factorial : Int -> Int;
+
+def factorial(n) {
+    return when n <= 1 { leave 1; } else { leave n * factorial(n - 1); };
+}
+
+proc main effects StdOut;
+
+def main {
+    let y: Int = factorial(x);
+
+    display("10! = " & y);
+}

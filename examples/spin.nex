@@ -1,0 +1,21 @@
+proc spin;
+proc spin_diverge effects MayDiverge;
+proc main effects StdOut;
+
+def spin {
+    while true {}
+}
+
+def spin_diverge {
+    while true {}
+}
+
+def main {
+    spin(); // removed by optimizer, no effects
+
+    display("Prints");
+
+    spin_diverge(); // kept by optimizer, Diverge found and not checked
+
+    display("Doesn't print");
+}

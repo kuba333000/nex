@@ -6,47 +6,64 @@ letter = "a".."z" | "A".."Z" ;
 digit = "0".."9" ;
 
 COMMENT = "//" .* ;
+NUMBER = digit* "." digit* ;
+STRING = "\"" .* "\"" ;
 IDENTIFIER = ( letter | "_" ) ( letter | digit | "_" )* ;
 
 !program = declaration* ;
 
 !declaration = global_variable_decl
+             | type_alias_decl
              | function_signature
              | procedure_signature
              | callable_definition
              ;
 
-global_variable_decl = "let" IDENTIFIER "=" expression ;
+global_variable_decl = "let" IDENTIFIER (":" type)? "=" expression ;
 
-function_signature = "func" IDENTIFIER ":" type "->" type ;
-procedure_signature = "proc" IDENTIFIER ":" type "->" type ;
+type_alias_decl = "type" IDENTIFIER "=" type ;
+
+function_signature  = "func" IDENTIFIER (":" type)? "->" type ("effects" sep_by_one_or_more[IDENTIFIER, ","])? ;
+procedure_signature = "proc" IDENTIFIER (":" type)?           ("effects" sep_by_one_or_more[IDENTIFIER, ","])? ;
 
 callable_definition = "def" IDENTIFIER "(" sep_by[IDENTIFIER, ","] ")" block ;
 
-type = IDENTIFIER | "()" | "(" sep_by_two_or_more[type, ","] ")" ;
+!type = named_type
+      | tuple_type
+      ;
+
+named_type = IDENTIFIER ;
+
+tuple_type = "()" | "(" sep_by_two_or_more[type, ","] ")" ;
 
 !block = "{" statement* "}" ;
 
 !statement = statement_type ";" ;
 
-statement_type = local_variable_decl
-               | if
-               | return
-               | procedure_call
+!statement = local_variable_decl ";"
+           | return ";"
+           | procedure_call ";"
+           | if
 
 local_variable_decl = "let" IDENTIFIER "=" expression ;
 
-if = "if" expression block_statement ("else" (if | block_statement))? ;
-
-procedure_call = IDENTIFIER "(" sep_by[expression, ","] ")" ;
+if = "if" expression block ("else" (if | block))? ;
 
 return = "return" expression ;
 
 !expression = when
             | primary_expression
 
-when = "when" expression block_expression ("else" (when | block_expression))? ;
+when = "when" expression block ("else" (when | block))? ;
 
-primary_expression = { Pratt parser } ;
+primary_expression = { Pratt parser -> prefix } ;
 
-block_statement & block_expression = "{" statement* "}" ;
+prefix = { Pratt parser -> literal } ;
+
+literal = NUMBER
+        | STRING
+        | IDENTIFIER
+        | function_call
+
+# shared grammar
+procedure_call & function_call = IDENTIFIER "(" sep_by[expression, ","] ")" ;

@@ -5,8 +5,10 @@ use crate::span::Span;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Let,
+    Type,
     Func,
     Proc,
+    Effects,
     Def,
     Return,
     Leave,
@@ -67,6 +69,10 @@ pub struct Token {
 
 impl Token {
     pub fn new(kind: TokenKind, lexeme: Option<String>, span: Span) -> Self { Self { kind, lexeme, span } }
+
+    pub fn lexeme_or(&self, default: &str) -> String {
+        self.lexeme.clone().unwrap_or_else(|| default.to_owned())
+    }
 }
 
 impl fmt::Display for Token {
@@ -82,8 +88,10 @@ impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TokenKind::Let => write!(f, "let"),
+            TokenKind::Type => write!(f, "type"),
             TokenKind::Func => write!(f, "func"),
             TokenKind::Proc => write!(f, "proc"),
+            TokenKind::Effects => write!(f, "effects"),
             TokenKind::Def => write!(f, "def"),
             TokenKind::Return => write!(f, "return"),
             TokenKind::Leave => write!(f, "leave"),

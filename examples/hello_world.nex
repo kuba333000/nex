@@ -1,0 +1,5 @@
+proc main effects StdOut;
+
+def main {
+    display("Hello world!");
+}

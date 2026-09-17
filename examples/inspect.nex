@@ -1,0 +1,6 @@
+func inspect : <T impl ToString> -> T effects StdOut;
+
+def inspect(x) {
+    display(x);
+    return x;
+}

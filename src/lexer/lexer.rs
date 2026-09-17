@@ -1,14 +1,18 @@
 use crate::span::Span;
 
-use crate::lexer::tokens::{TokenKind, Token};
+use crate::diagnostics::*;
+use crate::lexer::tokens::*;
 
-pub struct Lexer {
+pub struct Lexer<'a> {
     chars: Vec<char>,
     pos: usize,
+    diagnostic_sink: &'a mut DiagnosticSink,
 }
 
-impl Lexer {
-    pub fn new(input: &str) -> Self { Self { chars: input.chars().collect(), pos: 0, } }
+impl<'a> Lexer<'a> {
+    pub fn new(input: &str, diagnostic_sink: &'a mut DiagnosticSink ) -> Self {
+        Self { chars: input.chars().collect(), pos: 0, diagnostic_sink }
+    }
 
     fn peek(&self) -> Option<char> { self.chars.get(self.pos).copied() }
 
@@ -31,6 +35,28 @@ impl Lexer {
         let slice = self.chars.get(self.pos..self.pos + length);
         self.pos += length;
         slice
+    }
+
+    pub fn get_tokens(mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_token();
+
+            match token {
+                Token { kind: TokenKind::EndOfFile, .. } => {
+                    tokens.push(token);
+                    break;
+                },
+
+                Token { kind: TokenKind::Invalid, lexeme: Some(c), span } => {
+                    self.diagnostic_sink.error(span, format!("unexpected character: {}", c));
+                }
+
+                _ => tokens.push(token),
+            }
+        }
+
+        tokens
     }
 
     fn skip_whitespace(&mut self) {
@@ -59,8 +85,10 @@ impl Lexer {
 
         let kind = match identifier.as_str() {
             "let" => TokenKind::Let,
+            "type" => TokenKind::Type,
             "func" => TokenKind::Func,
             "proc" => TokenKind::Proc,
+            "effects" => TokenKind::Effects,
             "def" => TokenKind::Def,
             "return" => TokenKind::Return,
             "leave" => TokenKind::Leave,
@@ -125,8 +153,9 @@ impl Lexer {
 
     fn read_string(&mut self) -> Token {
         let start_pos = self.pos;
-        let mut string = String::from(self.next().unwrap());
-
+        let mut string = String::new();
+        
+        self.next();
         while let Some(c) = self.peek() {
             if c == '"' {
                 self.next();
@@ -146,13 +175,13 @@ impl Lexer {
 
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
-        let start_pos = self.pos;
+        let start = self.pos;
 
         let Some(ch) = self.peek() else {
             return Token {
                 kind: TokenKind::EndOfFile,
                 lexeme: None,
-                span: Span { start: start_pos, end: self.pos },
+                span: Span { start, end: start },
             };
         };
 
@@ -171,12 +200,12 @@ impl Lexer {
 
         // multi-character mapping
         let token = match () {
-            _ if self.peek_eq("->") => Some(Token::new(TokenKind::Arrow, None, Span { start: start_pos, end: start_pos + 2 })),
+            _ if self.peek_eq("->") => Some(Token::new(TokenKind::Arrow, None, Span { start, end: start + 2 })),
             
-            _ if self.peek_eq("==") => Some(Token::new(TokenKind::Equal, None, Span { start: start_pos, end: start_pos + 2 })),
-            _ if self.peek_eq("!=") => Some(Token::new(TokenKind::NotEq, None, Span { start: start_pos, end: start_pos + 2 })),
-            _ if self.peek_eq(">=") => Some(Token::new(TokenKind::GreaterEq, None, Span { start: start_pos, end: start_pos + 2 })),
-            _ if self.peek_eq("<=") => Some(Token::new(TokenKind::LessEq, None, Span { start: start_pos, end: start_pos + 2 })),
+            _ if self.peek_eq("==") => Some(Token::new(TokenKind::Equal, None, Span { start, end: start + 2 })),
+            _ if self.peek_eq("!=") => Some(Token::new(TokenKind::NotEq, None, Span { start, end: start + 2 })),
+            _ if self.peek_eq(">=") => Some(Token::new(TokenKind::GreaterEq, None, Span { start, end: start + 2 })),
+            _ if self.peek_eq("<=") => Some(Token::new(TokenKind::LessEq, None, Span { start, end: start + 2 })),
 
             _ => None
         };
@@ -223,31 +252,7 @@ impl Lexer {
         Token {
             kind: kind.clone(),
             lexeme: if kind == TokenKind::Invalid { Some(ch.to_string()) } else { None },
-            span: Span { start: start_pos, end: self.pos },
+            span: Span { start: start, end: self.pos },
         }
-    }
-
-    pub fn get_tokens(&mut self) -> Vec<Token> {
-        self.pos = 0;
-        
-        let mut tokens = Vec::new();
-        loop {
-            let token = self.next_token();
-
-            match token {
-                Token { kind: TokenKind::EndOfFile, .. } => {
-                    tokens.push(token);
-                    break;
-                }
-                Token { kind: TokenKind::Invalid, lexeme: Some(c), .. } => {
-                    panic!("unexpected character: {}", c);
-                }
-                _ => {}
-            }
-
-            tokens.push(token);
-        }
-
-        tokens
     }
 }

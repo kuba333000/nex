@@ -1,8 +1,8 @@
 use crate::span::Span;
-use crate::diagnostic::{Severity, Diagnostic};
 
-use crate::lexer::tokens::{Token, TokenKind};
-use crate::parser::nodes::{Block, Parameter, UnaryOp, BinaryOp, ExprKind, StmtKind, DeclKind, TypeKind, Expr, Stmt, Decl, Type};
+use crate::diagnostics::*;
+use crate::lexer::tokens::*;
+use crate::parser::ast::*;
 
 type BpSize = u8;
 
@@ -12,19 +12,31 @@ macro_rules! matches_token_kind {
     };
 }
 
-pub struct Parser {
+pub struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostic_sink: &'a mut DiagnosticSink,
 }
 
-impl Parser {
-    pub fn new(token_vec: Vec<Token>) -> Self { Self { tokens: token_vec, pos: 0, diagnostics: Vec::new() } }
+impl<'a> Parser<'a> {
+    pub fn new(token_vec: Vec<Token>, diagnostic_sink: &'a mut DiagnosticSink) -> Self {
+        Self { tokens: token_vec, pos: 0, diagnostic_sink }
+    }
 
     fn peek(&self) -> Token { self.tokens.get(self.pos).cloned().unwrap() }
 
+    fn is_peek(&self, token_kind: TokenKind) -> bool {
+        self.peek().kind == token_kind
+    }
+
     fn look(&self, offset: isize) -> Token {
-        let index = self.pos.checked_add_signed(offset).unwrap();
+        let index = self
+            .pos
+            .checked_add_signed(offset)
+            .unwrap_or(0);
+
+        let index = index.min(self.tokens.len() - 1);
+
         self.tokens.get(index).cloned().unwrap()
     }
 
@@ -32,14 +44,6 @@ impl Parser {
         let token = self.peek();
         self.pos += 1;
         token
-    }
-
-    fn error(&mut self, span: Span, message: String) {
-        self.diagnostics.push(Diagnostic {
-            severity: Severity::Error,
-            message,
-            span,
-        });
     }
 
     fn synchronize(&mut self) {
@@ -60,8 +64,14 @@ impl Parser {
             self.pos += 1;
             token
         } else {
-            self.error(token.span, format!("expected '{}', found '{}'", token_kind, token.kind));
-            Token { kind: TokenKind::Missing(Box::new(token_kind)), lexeme: None, span: token.span }
+            self.diagnostic_sink.error(token.span, format!("expected '{}', found '{}'", token_kind, token.kind));
+            self.pos += 1;
+
+            if token_kind == TokenKind::Semicolon {
+                self.synchronize();
+            };
+
+            Token { kind: TokenKind::Missing(Box::new(token_kind)), lexeme: token.lexeme, span: token.span }
         }
     }
 
@@ -109,9 +119,7 @@ impl Parser {
     }
 
     fn get_infix_op(&self, op: TokenKind) -> Option<(BinaryOp, BpSize, BpSize)> {
-        match op {
-            TokenKind::Assign => Some((BinaryOp::Assign, 1, 2)),
-            
+        match op {            
             TokenKind::Greater => Some((BinaryOp::Greater, 3, 4)),
             TokenKind::Less => Some((BinaryOp::Less, 3, 4)),
             TokenKind::GreaterEq => Some((BinaryOp::GreaterEq, 3, 4)),
@@ -130,15 +138,22 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Vec<Decl> {
-        self.pos = 0;
-
-        let mut nodes = Vec::new();
+    pub fn parse_module(mut self) -> Module {
+        let mut declarations = Vec::new();
         while self.peek().kind != TokenKind::EndOfFile {
-            nodes.push(self.declaration() );
+            declarations.push(self.declaration());
         }
 
-        nodes
+        Module(declarations)
+    }
+
+    fn identifier(&mut self) -> Ident {
+        let token = self.consume(TokenKind::Identifier);
+
+        let name = token.lexeme_or("<missing>");
+        let span = token.span;
+        
+        Ident { name, span }
     }
 
     fn declaration(&mut self) -> Decl {
@@ -147,12 +162,13 @@ impl Parser {
 
         let kind = match token.kind {
             TokenKind::Let => self.global_variable_decl(),
+            TokenKind::Type => self.type_alias_decl(),
             TokenKind::Func => self.function_signature(),
             TokenKind::Proc => self.procedure_signature(),
             TokenKind::Def => self.callable_definition(),
             
             _ => {
-                self.error(Span { start, end: token.span.end }, format!(
+                self.diagnostic_sink.error(token.span, format!(
                     "expected declaration, found '{}'",
                     token.kind
                 ));
@@ -168,56 +184,100 @@ impl Parser {
     }
 
     fn global_variable_decl(&mut self) -> DeclKind {
-        self.consume(TokenKind::Let);
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        DeclKind::GlobalVariable(self.variable_decl())
+    }
+
+    fn type_alias_decl(&mut self) -> DeclKind {
+        self.consume(TokenKind::Type);
+        let ident = self.identifier();
         self.consume(TokenKind::Assign);
-        let value = self.expression();
+        let value = self.type_();
         self.consume(TokenKind::Semicolon);
 
-        DeclKind::GlobalVariable { name, value: Box::new(value) }
+        DeclKind::TypeAlias { ident, value: Box::new(value) }
     }
 
     fn function_signature(&mut self) -> DeclKind {
         self.consume(TokenKind::Func);
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
-        self.consume(TokenKind::Colon);
-        let domain = self.type_();
+        let ident = self.identifier();
+
+        let domain = if self.try_consume(TokenKind::Colon).is_some() { self.type_() } else { // implicit unit type
+            let start = self.peek().span.start;
+
+            Type {
+                kind: TypeKind::Tuple(Vec::new()),
+                span: Span { start, end: start } // zero-width
+            }
+        };
+
         self.consume(TokenKind::Arrow);
         let codomain = self.type_();
+
+        let effects = if self.try_consume(TokenKind::Effects).is_some() {
+            let mut effect_list = EffectList(Vec::new());
+            
+            effect_list.0.push(Effect { ident: self.identifier() });
+            self.consume(TokenKind::Comma);
+
+            while self.is_peek(TokenKind::Identifier) {
+                effect_list.0.push(Effect { ident: self.identifier() });
+                self.consume(TokenKind::Comma);
+            }
+
+            effect_list
+        } else {
+            EffectList(Vec::new())
+        };
         self.consume(TokenKind::Semicolon);
 
-        DeclKind::FunctionSignature { name, domain: Box::new(domain), codomain: Box::new(codomain) }
+        DeclKind::FunctionSignature { ident, domain: Box::new(domain), codomain: Box::new(codomain), effects }
     }
 
     fn procedure_signature(&mut self) -> DeclKind {
         self.consume(TokenKind::Proc);
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
-        self.consume(TokenKind::Colon);
-        let domain = self.type_();
+        let ident = self.identifier();
+
+        let domain = if self.try_consume(TokenKind::Colon).is_some() { self.type_() } else { // implicit unit type
+            let start = self.peek().span.start;
+
+            Type {
+                kind: TypeKind::Tuple(Vec::new()),
+                span: Span { start, end: start } // zero-width
+            }
+        };
+
+        let effects = if self.try_consume(TokenKind::Effects).is_some() {
+            let mut effect_list = EffectList(Vec::new());
+            effect_list.0.push(Effect { ident: self.identifier() });
+
+            while self.is_peek(TokenKind::Comma) {
+                self.consume(TokenKind::Comma);
+                effect_list.0.push(Effect { ident: self.identifier() });
+            }
+
+            effect_list
+        } else {
+            EffectList(Vec::new())
+        };
+
         self.consume(TokenKind::Semicolon);
 
-        DeclKind::ProcedureSignature { name, domain: Box::new(domain) }
+        DeclKind::ProcedureSignature { ident, domain: Box::new(domain), effects }
     }
 
     fn callable_definition(&mut self) -> DeclKind {
         self.consume(TokenKind::Def);
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        let ident = self.identifier();
 
         // parameters
-        let mut parameters = Vec::new();
+        let mut parameters = ParameterList::new();
         if self.try_consume(TokenKind::LeftParen).is_some() {
             if self.peek().kind == TokenKind::Identifier {
-                parameters.push(Parameter {
-                    name: self.consume(TokenKind::Identifier).lexeme.unwrap(),
-                    default: None // TODO: handle default function parameters in the future
-                });
-            }
-
-            while self.try_consume(TokenKind::Comma).is_some() {
-                parameters.push(Parameter {
-                    name: self.consume(TokenKind::Identifier).lexeme.unwrap(),
-                    default: None // TODO: handle default function parameters in the future
-                });
+                parameters.push(self.identifier());
+                
+                while self.try_consume(TokenKind::Comma).is_some() {
+                    parameters.push(self.identifier());
+                }
             }
 
             self.consume(TokenKind::RightParen);
@@ -225,48 +285,76 @@ impl Parser {
 
         let body = self.block();
 
-        DeclKind::Callable { name, parameters, body }
+        DeclKind::CallableDefinition { ident, parameters, body }
     }
 
     fn type_(&mut self) -> Type {
-        let start = self.peek().span.start;
+        let token = self.peek();
+        let start = token.span.start;
 
-        if self.peek().kind == TokenKind::Identifier {
-            let name = self.consume(TokenKind::Identifier);
+        let kind = match token.kind {
+            TokenKind::Identifier => self.named_type(),
+            TokenKind::LeftParen => self.tuple_type(),
 
-            Type {
-                kind: TypeKind::Named(name.lexeme.unwrap()),
-                span: Span { start, end: self.look(-1).span.end },
-            }
-        } else {
-            self.consume(TokenKind::LeftParen);
-            if self.peek().kind == TokenKind::RightParen { // unit type ()
-                self.consume(TokenKind::RightParen);
+            _ => {
+                self.diagnostic_sink.error(token.span, format!(
+                    "expected type, found '{}'",
+                    token.kind
+                ));
                 
-                return Type {
-                    kind: TypeKind::Tuple(Vec::new()),
-                    span: Span { start, end: self.look(-1).span.end },
-                };
+                TypeKind::Error
             }
-            
-            let mut types = Vec::new();
+        };
 
-            // at least two-element tuple
-            types.push(self.type_());
-            self.consume(TokenKind::Comma);
-            types.push(self.type_());
+        let end = self.look(-1).span.end;
 
-            while self.try_consume(TokenKind::Comma).is_some() {
-                types.push(self.type_());
-            }
+        Type { kind, span: Span { start, end } }
+    }
 
-            self.consume(TokenKind::RightParen);
+    fn named_type(&mut self) -> TypeKind {
+        let name = self.consume(TokenKind::Identifier);
 
-            Type {
-                kind: TypeKind::Tuple(types),
-                span: Span { start, end: self.look(-1).span.end },
-            }
+        TypeKind::Named(name.lexeme.unwrap())
+    }
+
+    fn tuple_type(&mut self) -> TypeKind {
+        self.consume(TokenKind::LeftParen);
+
+        if self.try_consume(TokenKind::RightParen).is_some() {
+            return TypeKind::Tuple(Vec::new()); // unit type ()
         }
+
+        let mut types = Vec::new();
+        // at least two-element tuple
+
+        types.push(self.type_());
+        self.consume(TokenKind::Comma);
+        types.push(self.type_());
+
+        while self.try_consume(TokenKind::Comma).is_some() {
+            types.push(self.type_());
+        }
+
+        self.consume(TokenKind::RightParen);
+
+        TypeKind::Tuple(types)
+    }
+
+    fn variable_decl(&mut self) -> VariableDecl {
+        self.consume(TokenKind::Let);
+        let ident = self.identifier();
+
+        let ty = if self.try_consume(TokenKind::Colon).is_some() {
+            Some(Box::new(self.type_()))
+        } else {
+            None
+        };
+
+        self.consume(TokenKind::Assign);
+        let value = self.expression();
+        self.consume(TokenKind::Semicolon);
+
+        VariableDecl { ident, ty, value: Box::new(value) }
     }
 
     fn statement(&mut self) -> Stmt {
@@ -281,7 +369,7 @@ impl Parser {
             TokenKind::Identifier => self.procedure_call(),
             
             _ => {
-                self.error(Span { start, end: token.span.end }, format!(
+                self.diagnostic_sink.error(token.span, format!(
                     "expected statement, found '{}'",
                     token.kind
                 ));
@@ -297,40 +385,11 @@ impl Parser {
     }
 
     fn local_variable_decl(&mut self) -> StmtKind {
-        self.consume(TokenKind::Let);
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
-        self.consume(TokenKind::Assign);
-        let value = self.expression();
-        self.consume(TokenKind::Semicolon);
-
-        StmtKind::LocalVariable { name, value: Box::new(value) }
+        StmtKind::LocalVariable(self.variable_decl())
     }
 
     fn if_(&mut self) -> StmtKind {
-        self.consume(TokenKind::If);
-        let cond = Box::new(self.expression());
-        let if_body = self.block();
-
-        if let Some(else_tok) = self.try_consume(TokenKind::Else) {
-            let token = self.peek();
-            let else_body = match token.kind {
-                TokenKind::If => self.node_statement(Self::if_),
-                TokenKind::LeftBrace => self.node_statement(|parser| StmtKind::Block(parser.block())),
-
-                _ => {
-                    self.error(Span { start: else_tok.span.start, end: token.span.end }, format!(
-                        "expected 'else' to be followed by 'if' or '{{', found '{}'",
-                        token.kind
-                    ));
-
-                    Stmt { kind: StmtKind::Error, span: token.span }
-                }
-            };
-
-            return StmtKind::If { cond, if_body, else_body: Some(Box::new(else_body)) };
-        };
-
-        StmtKind::If { cond, if_body, else_body: None }
+        StmtKind::If(self.conditional(TokenKind::If))
     }
 
     fn return_(&mut self) -> StmtKind {
@@ -354,7 +413,8 @@ impl Parser {
     }
 
     fn procedure_call(&mut self) -> StmtKind {
-        let name = self.consume(TokenKind::Identifier).lexeme.unwrap();
+        let token = self.consume(TokenKind::Identifier);
+        let identifier = ExprKind::Identifier(token.lexeme.unwrap());
 
         self.consume(TokenKind::LeftParen);
         let mut arguments = Vec::new();
@@ -367,7 +427,43 @@ impl Parser {
         self.consume(TokenKind::RightParen);
         self.consume(TokenKind::Semicolon);
 
-        StmtKind::ProcedureCall { name, arguments }
+        StmtKind::Call(Call { callee: Box::new(Expr { kind: identifier, span: token.span }), arguments })
+    }
+
+    fn conditional(&mut self, cond_kind: TokenKind) -> Conditional {
+        if !matches_token_kind!(cond_kind, If | When) {
+            panic!("Nex Internal Compiler Error: Conditional expects if/when keyword, found {}", cond_kind)
+        };
+
+        self.consume(cond_kind.clone());
+
+        let cond = Box::new(self.expression());
+        let body = self.block();
+
+        if let Some(else_tok) = self.try_consume(TokenKind::Else) {
+            let token = self.peek();
+            let else_body = match token.kind {
+                k if k == cond_kind => ElseClause::Conditional(
+                    Box::new(self.conditional(cond_kind))
+                ),
+
+                TokenKind::LeftBrace => ElseClause::Block(self.block()),
+
+                _ => {
+                    self.diagnostic_sink.error(Span { start: else_tok.span.start, end: token.span.end }, format!(
+                        "expected 'else' to be followed by '{}' or '{{', found '{}'",
+                        cond_kind,
+                        token.kind
+                    ));
+
+                    ElseClause::Error
+                }
+            };
+
+            return Conditional { cond, body, else_body: Some(else_body) };
+        };
+
+        Conditional { cond, body, else_body: None }
     }
 
     fn block(&mut self) -> Block {
@@ -380,7 +476,7 @@ impl Parser {
 
         self.consume(TokenKind::RightBrace);
 
-        Block { statements: nodes }
+        Block(nodes)
     }
 
     fn expression(&mut self) -> Expr {
@@ -399,31 +495,7 @@ impl Parser {
     }
 
     fn when(&mut self) -> ExprKind {
-        self.consume(TokenKind::When);
-        let cond = Box::new(self.expression());
-        let when_body = self.block();
-
-        if let Some(else_tok) = self.try_consume(TokenKind::Else) {            
-            let token = self.peek();
-            let else_body = match token.kind {
-                TokenKind::When => self.node_expression(Self::when),
-                TokenKind::LeftBrace => self.node_expression(|parser| ExprKind::Block(parser.block())),
-
-                _ => {
-                    self.error(Span { start: else_tok.span.start, end: token.span.end }, format!(
-                        "expected 'else' to be followed by 'when' or '{{', found '{}'",
-                        token.kind
-                    ));
-
-                    self.synchronize();
-                    Expr { kind: ExprKind::Error, span: token.span }
-                }
-            };
-
-            return ExprKind::When { cond, when_body, else_body: Some(Box::new(else_body)) };
-        };
-
-        ExprKind::When { cond, when_body, else_body: None }
+        ExprKind::When(self.conditional(TokenKind::When))
     }
 
     fn primary_expression(&mut self, min_bp: BpSize) -> Expr {
@@ -497,8 +569,9 @@ impl Parser {
 
             TokenKind::Identifier => {
                 self.consume(TokenKind::Identifier);
-                if self.try_consume(TokenKind::LeftParen).is_some() {
-                    // function call
+                let identifier = ExprKind::Identifier(token.lexeme.unwrap());
+
+                if self.try_consume(TokenKind::LeftParen).is_some() { // function call
                     let mut arguments = Vec::new();
                     
                     if self.peek().kind != TokenKind::RightParen {
@@ -510,14 +583,14 @@ impl Parser {
 
                     self.consume(TokenKind::RightParen);
 
-                    ExprKind::FunctionCall { name: token.lexeme.unwrap(), arguments }
+                    ExprKind::Call(Call { callee: Box::new(Expr { kind: identifier, span: token.span }), arguments })
                 } else {
-                    ExprKind::Identifier(token.lexeme.unwrap())
+                    identifier
                 }
             },
             
             _ => {
-                self.error(token.span, format!(
+                self.diagnostic_sink.error(token.span, format!(
                     "expected literal, found '{}'",
                     token.kind
                 ));
