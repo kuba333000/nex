@@ -11,5 +11,5 @@ proc main effects StdOut;
 def main {
     let y: Int = factorial(x);
 
-    display("10! = " & y);
+    println("10! = " & y);
 }

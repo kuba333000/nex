@@ -1,5 +1,5 @@
 proc main effects StdOut;
 
 def main {
-    display("Hello world!");
+    println("Hello world!");
 }

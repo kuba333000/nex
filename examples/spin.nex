@@ -13,9 +13,9 @@ def spin_diverge {
 def main {
     spin(); // removed by optimizer, no effects
 
-    display("Prints");
+    println("Prints");
 
     spin_diverge(); // kept by optimizer, Diverge found and not checked
 
-    display("Doesn't print");
+    println("Doesn't print");
 }

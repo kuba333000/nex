@@ -4,7 +4,7 @@ use crate::analyzer::symbols::SymbolId;
 
 #[derive(Debug, Clone)]
 pub struct Hir {
-    decls: Vec<HirDecl>
+    decls: Vec<HirDecl>,
 }
 
 #[derive(Debug, Clone)]
